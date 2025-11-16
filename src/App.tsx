@@ -9,8 +9,10 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -126,7 +128,6 @@ const App: React.FC = () => {
             department: loadedProfile.department,
           });
         } else {
-          // создаём базовый профиль
           const baseProfile: UserProfile = {
             id: user.uid,
             email: user.email || "",
@@ -202,7 +203,6 @@ const App: React.FC = () => {
 
         setChats(list);
 
-        // если нет активного чата — выбираем первый
         if (!activeChatId && list.length > 0) {
           setActiveChatId(list[0].id);
         }
@@ -227,8 +227,6 @@ const App: React.FC = () => {
     setMessages([]);
 
     const messagesCol = collection(db, "messages");
-
-    // без orderBy, сортируем на клиенте
     const q = query(messagesCol, where("chatId", "==", activeChatId));
 
     const unsub = onSnapshot(
@@ -298,6 +296,31 @@ const App: React.FC = () => {
     }
   };
 
+  // -------- Удаление чата --------
+
+  const handleDeleteChat = async (chatId: string) => {
+    if (!window.confirm("Удалить чат и все его сообщения?")) return;
+
+    try {
+      // удаляем все сообщения этого чата
+      const msgsCol = collection(db, "messages");
+      const q = query(msgsCol, where("chatId", "==", chatId));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+
+      // удаляем сам чат
+      await deleteDoc(doc(db, "chats", chatId));
+
+      if (activeChatId === chatId) {
+        setActiveChatId(null);
+        setMessages([]);
+      }
+    } catch (e) {
+      console.error("Delete chat error", e);
+      alert("Не удалось удалить чат");
+    }
+  };
+
   // -------- Отправка сообщения --------
 
   const handleSendMessage = async () => {
@@ -338,6 +361,29 @@ const App: React.FC = () => {
       alert("Не удалось отправить сообщение");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  // -------- Удаление сообщения --------
+
+  const handleDeleteMessage = async (m: Message) => {
+    if (!window.confirm("Удалить сообщение?")) return;
+
+    try {
+      await deleteDoc(doc(db, "messages", m.id));
+
+      const chatRef = doc(db, "chats", m.chatId);
+      const snap = await getDoc(chatRef);
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        const current = (data.messageCount as number) || 0;
+        await updateDoc(chatRef, {
+          messageCount: current > 0 ? current - 1 : 0,
+        });
+      }
+    } catch (e) {
+      console.error("Delete message error", e);
+      alert("Не удалось удалить сообщение");
     }
   };
 
@@ -516,7 +562,18 @@ const App: React.FC = () => {
                   }
                   onClick={() => setActiveChatId(chat.id)}
                 >
-                  <div className="chat-item-title">{chat.title}</div>
+                  <div className="chat-item-header">
+                    <div className="chat-item-title">{chat.title}</div>
+                    <button
+                      className="chat-delete-button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChat(chat.id);
+                      }}
+                    >
+                      x
+                    </button>
+                  </div>
                   <div className="chat-item-sub">
                     Сообщений: {chat.messageCount || 0}
                   </div>
@@ -586,6 +643,14 @@ const App: React.FC = () => {
                         >
                           {m.userName}
                         </span>
+                        {isMine && (
+                          <button
+                            className="message-delete-button"
+                            onClick={() => handleDeleteMessage(m)}
+                          >
+                            x
+                          </button>
+                        )}
                       </div>
                       <div className="message-bubble">
                         {m.text && <div>{m.text}</div>}
