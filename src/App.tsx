@@ -1,308 +1,375 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import './index.css';
-
+import React, { useEffect, useMemo, useState } from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   User,
-} from 'firebase/auth';
-
+} from "firebase/auth";
 import {
   collection,
   doc,
-  addDoc,
-  setDoc,
-  getDoc,
   onSnapshot,
-  query,
-  where,
-  orderBy,
+  addDoc,
+  updateDoc,
   serverTimestamp,
-} from 'firebase/firestore';
-
+  getDoc,
+  setDoc,
+  query,
+  orderBy,
+  where,
+  increment,
+} from "firebase/firestore";
 import {
   ref,
   uploadBytes,
   getDownloadURL,
-} from 'firebase/storage';
+} from "firebase/storage";
 
-import { auth, db, storage } from './firebase';
-import { Chat, Message, UserProfile } from './types';
+import { auth, db, storage } from "./firebase";
 
-// Небольшой помощник для форматирования времени
-function formatTime(d: Date | null): string {
-  if (!d) return '';
-  const hh = d.getHours().toString().padStart(2, '0');
-  const mm = d.getMinutes().toString().padStart(2, '0');
-  return `${hh}:${mm}`;
-}
+type UserProfile = {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  position?: string;
+  department?: string;
+  avatarUrl?: string;
+};
 
-// Получить отображаемое имя пользователя
-function getDisplayName(p?: UserProfile | null): string {
-  if (!p) return '';
-  if (p.firstName || p.lastName) {
-    return `${p.firstName} ${p.lastName}`.trim();
-  }
-  return p.email;
-}
+type Chat = {
+  id: string;
+  title: string;
+  createdAt?: any;
+  messageCount?: number;
+};
 
-// ------------------ КОМПОНЕНТ ПРИЛОЖЕНИЯ ------------------ //
+type Message = {
+  id: string;
+  chatId: string;
+  text: string;
+  createdAt?: any;
+  userId: string;
+  userName: string;
+  userAvatarUrl?: string;
+  fileName?: string;
+  fileUrl?: string;
+};
 
 const App: React.FC = () => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [loadingAuth, setLoadingAuth] = useState(true);
-
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [messageText, setMessageText] = useState('');
-  const [fileToSend, setFileToSend] = useState<File | null>(null);
-  const [isSending, setIsSending] = useState(false);
+  const [messageText, setMessageText] = useState("");
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
-  const [creatingChat, setCreatingChat] = useState(false);
-  const [newChatName, setNewChatName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [newChatTitle, setNewChatTitle] = useState("");
 
-  // ---------------- АВТОРИЗАЦИЯ ---------------- //
+  // Локальная карта пользователей (для аватарок и имён в сообщениях)
+  const [usersMap, setUsersMap] = useState<Record<string, UserProfile>>({});
+
+  // -------------------- АВТОРИЗАЦИЯ --------------------
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
-      setLoadingAuth(false);
+      setIsLoading(false);
+
+      if (user) {
+        // грузим / создаём профиль
+        const userRef = doc(db, "users", user.uid);
+        const snap = await getDoc(userRef);
+
+        if (snap.exists()) {
+          const data = snap.data() as Omit<UserProfile, "id">;
+          setUserProfile({ id: user.uid, ...data });
+        } else {
+          const defaultProfile: UserProfile = {
+            id: user.uid,
+            email: user.email || "",
+          };
+          await setDoc(userRef, {
+            email: defaultProfile.email,
+            firstName: "",
+            lastName: "",
+            position: "",
+            department: "",
+            avatarUrl: "",
+            createdAt: serverTimestamp(),
+          });
+          setUserProfile(defaultProfile);
+        }
+      } else {
+        setUserProfile(null);
+      }
     });
+
     return () => unsub();
   }, []);
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async () => {
     setAuthError(null);
-    if (!authEmail || !authPassword) {
-      setAuthError('Введите email и пароль');
-      return;
-    }
-
     try {
-      if (isLoginMode) {
-        await signInWithEmailAndPassword(auth, authEmail, authPassword);
-      } else {
-        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setAuthError(err.message || 'Ошибка авторизации');
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (e: any) {
+      setAuthError(e.message || "Ошибка входа");
+    }
+  };
+
+  const handleRegister = async () => {
+    setAuthError(null);
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
+      const user = cred.user;
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, {
+        email: user.email || "",
+        firstName: "",
+        lastName: "",
+        position: "",
+        department: "",
+        avatarUrl: "",
+        createdAt: serverTimestamp(),
+      });
+    } catch (e: any) {
+      setAuthError(e.message || "Ошибка регистрации");
     }
   };
 
   const handleLogout = async () => {
     await signOut(auth);
-    setProfile(null);
-    setChats([]);
-    setMessages([]);
-    setActiveChatId(null);
   };
 
-  // ---------------- ПРОФИЛЬ ---------------- //
+  // -------------------- ПОДПИСКА НА ПОЛЬЗОВАТЕЛЕЙ --------------------
 
-  // Загрузка профиля при входе
   useEffect(() => {
-    if (!firebaseUser) {
-      setProfile(null);
-      return;
-    }
+    if (!firebaseUser) return;
 
-    const loadProfile = async () => {
-      setProfileLoading(true);
-      try {
-        const refDoc = doc(db, 'users', firebaseUser.uid);
-        const snap = await getDoc(refDoc);
-        if (snap.exists()) {
-          const data = snap.data() as any;
-          const p: UserProfile = {
-            uid: firebaseUser.uid,
-            email: data.email ?? firebaseUser.email ?? '',
-            firstName: data.firstName ?? '',
-            lastName: data.lastName ?? '',
-            position: data.position ?? '',
-            department: data.department ?? '',
-            avatarUrl: data.avatarUrl ?? null,
-          };
-          p.fullName = getDisplayName(p);
-          setProfile(p);
-        } else {
-          // создать минимальный профиль
-          const base: UserProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email ?? '',
-            firstName: '',
-            lastName: '',
-            position: '',
-            department: '',
-            avatarUrl: null,
-          };
-          base.fullName = getDisplayName(base);
-          await setDoc(refDoc, {
-            email: base.email,
-            firstName: '',
-            lastName: '',
-            position: '',
-            department: '',
-            avatarUrl: null,
-          });
-          setProfile(base);
-        }
-      } catch (err) {
-        console.error('loadProfile error', err);
-      } finally {
-        setProfileLoading(false);
-      }
-    };
+    const usersRef = collection(db, "users");
+    const qUsers = query(usersRef);
 
-    loadProfile();
-  }, [firebaseUser]);
-
-  const handleOpenProfile = () => {
-    setProfileAvatarFile(null);
-    setIsProfileModalOpen(true);
-  };
-
-  const handleSaveProfile = async () => {
-    if (!firebaseUser || !profile) return;
-
-    setProfileSaving(true);
-    try {
-      let avatarUrl = profile.avatarUrl ?? null;
-
-      if (profileAvatarFile) {
-        const avatarRef = ref(
-          storage,
-          `avatars/${firebaseUser.uid}.jpg`
-        );
-        await uploadBytes(avatarRef, profileAvatarFile);
-        avatarUrl = await getDownloadURL(avatarRef);
-      }
-
-      const updated: UserProfile = {
-        ...profile,
-        avatarUrl,
-      };
-      updated.fullName = getDisplayName(updated);
-
-      await setDoc(doc(db, 'users', firebaseUser.uid), {
-        email: updated.email,
-        firstName: updated.firstName,
-        lastName: updated.lastName,
-        position: updated.position,
-        department: updated.department,
-        avatarUrl: updated.avatarUrl,
+    const unsub = onSnapshot(qUsers, (snap) => {
+      const map: Record<string, UserProfile> = {};
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as Omit<UserProfile, "id">;
+        map[docSnap.id] = { id: docSnap.id, ...data };
       });
-
-      setProfile(updated);
-      setIsProfileModalOpen(false);
-    } catch (err) {
-      console.error('saveProfile error', err);
-      alert('Ошибка сохранения профиля');
-    } finally {
-      setProfileSaving(false);
-    }
-  };
-
-  // ---------------- ЧАТЫ ---------------- //
-
-  // Подписка на список чатов
-  useEffect(() => {
-    if (!firebaseUser) {
-      setChats([]);
-      setActiveChatId(null);
-      return;
-    }
-
-    const q = query(
-      collection(db, 'chats'),
-      orderBy('createdAt', 'asc')
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-      const list: Chat[] = snap.docs.map((d) => {
-        const data = d.data() as any;
-        return {
-          id: d.id,
-          name: data.name ?? 'Без имени',
-          createdAt: data.createdAt?.toDate?.() ?? null,
-          createdBy: data.createdBy ?? '',
-          messagesCount: data.messagesCount ?? 0,
-          lastMessageAt: data.lastMessageAt?.toDate?.() ?? null,
-        };
-      });
-
-      setChats(list);
-
-      // если активный чат не выбран — выбрать "Общий чат" или первый
-      setActiveChatId((prev) => {
-        if (prev) return prev;
-        const general = list.find((c) => c.name === 'Общий чат');
-        return general?.id ?? list[0]?.id ?? null;
-      });
+      setUsersMap(map);
     });
 
     return () => unsub();
   }, [firebaseUser]);
 
-  // Создать новый чат
-  const handleCreateChat = async () => {
-    if (!firebaseUser) return;
-    if (!newChatName.trim()) return;
-    setCreatingChat(true);
-    try {
-      const docRef = await addDoc(collection(db, 'chats'), {
-        name: newChatName.trim(),
-        createdAt: serverTimestamp(),
-        createdBy: firebaseUser.uid,
-        messagesCount: 0,
-        lastMessageAt: null,
-      });
-      setNewChatName('');
-      setActiveChatId(docRef.id);
-    } catch (err) {
-      console.error('createChat error', err);
-      alert('Ошибка создания чата');
-    } finally {
-      setCreatingChat(false);
-    }
-  };
+  // -------------------- ПОДПИСКА НА ЧАТЫ --------------------
 
-  // ---------------- СООБЩЕНИЯ ---------------- //
-
-  // Подписка на сообщения текущего чата (вот здесь ключевое изменение)
   useEffect(() => {
-    if (!firebaseUser || !activeChatId) {
+    if (!firebaseUser) return;
+
+    const chatsRef = collection(db, "chats");
+    const qChats = query(chatsRef, orderBy("createdAt", "asc"));
+
+    const unsub = onSnapshot(qChats, (snap) => {
+      const data: Chat[] = [];
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() as Omit<Chat, "id">;
+        data.push({ id: docSnap.id, ...d });
+      });
+      setChats(data);
+
+      // если активный чат не выбран — выбираем первый
+      if (!activeChatId && data.length > 0) {
+        setActiveChatId(data[0].id);
+      }
+    });
+
+    return () => unsub();
+  }, [firebaseUser, activeChatId]);
+
+  const activeChat: Chat | undefined = useMemo(
+    () => chats.find((c) => c.id === activeChatId),
+    [chats, activeChatId]
+  );
+
+  // -------------------- ПОДПИСКА НА СООБЩЕНИЯ --------------------
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    if (!activeChatId) {
       setMessages([]);
       return;
     }
 
-    const q = query(
-      collection(db, 'messages'),
-      where('chatId', '==', activeChatId),
-      orderBy('createdAt', 'asc')
+    // ВНИМАНИЕ: здесь мы жёстко фильтруем по chatId,
+    // чтобы не тянуть сообщения из других чатов
+    const messagesRef = collection(db, "messages");
+    const qMessages = query(
+      messagesRef,
+      where("chatId", "==", activeChatId),
+      orderBy("createdAt", "asc")
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      const list: Message[] = snap.docs.map((d) => {
-        const data = d.data() as any;
-        return {
-          id: d.id,
-          chatId: data.chatId,
-          text: data.text ?? '',
-          createdAt: data.createdAt?.to
+    const unsub = onSnapshot(qMessages, (snap) => {
+      const data: Message[] = [];
+      snap.forEach((docSnap) => {
+        const d = docSnap.data() as Omit<Message, "id">;
+        data.push({ id: docSnap.id, ...d });
+      });
+      setMessages(data);
+    });
+
+    return () => unsub();
+  }, [firebaseUser, activeChatId]);
+
+  // Дополнительно — на всякий случай считаем сообщения локально
+  const messagesForActiveChat: Message[] = useMemo(() => {
+    if (!activeChatId) return [];
+    return messages.filter((m) => m.chatId === activeChatId);
+  }, [messages, activeChatId]);
+
+  // -------------------- СОЗДАНИЕ ЧАТА --------------------
+
+  const handleCreateChat = async () => {
+    if (!firebaseUser) return;
+    const title = newChatTitle.trim();
+    if (!title) return;
+
+    const chatsRef = collection(db, "chats");
+    const newChatDoc = await addDoc(chatsRef, {
+      title,
+      createdBy: firebaseUser.uid,
+      createdAt: serverTimestamp(),
+      messageCount: 0,
+    });
+
+    setNewChatTitle("");
+    setActiveChatId(newChatDoc.id);
+  };
+
+  // -------------------- ОТПРАВКА СООБЩЕНИЯ --------------------
+
+  const handleSendMessage = async () => {
+    if (!firebaseUser || !userProfile || !activeChatId) return;
+    if (!messageText.trim() && !attachedFile) return;
+
+    const messagesRef = collection(db, "messages");
+
+    let fileUrl: string | undefined;
+    let fileName: string | undefined;
+
+    if (attachedFile) {
+      fileName = attachedFile.name;
+      const filePath = `chatFiles/${activeChatId}/${Date.now()}_${fileName}`;
+      const fileStorageRef = ref(storage, filePath);
+      await uploadBytes(fileStorageRef, attachedFile);
+      fileUrl = await getDownloadURL(fileStorageRef);
+    }
+
+    const text = messageText.trim();
+
+    await addDoc(messagesRef, {
+      chatId: activeChatId, // ← ключевая строка
+      text,
+      userId: firebaseUser.uid,
+      userName:
+        (userProfile.firstName || userProfile.lastName) ?
+          `${userProfile.firstName || ""} ${userProfile.lastName || ""}`.trim() :
+          userProfile.email,
+      userAvatarUrl: userProfile.avatarUrl || "",
+      fileName: fileName || null,
+      fileUrl: fileUrl || null,
+      createdAt: serverTimestamp(),
+    });
+
+    // обновим счётчик сообщений в документе чата
+    if (activeChat) {
+      const chatRef = doc(db, "chats", activeChat.id);
+      await updateDoc(chatRef, {
+        messageCount: increment(1),
+        lastMessageAt: serverTimestamp(),
+        lastMessageText: text || fileName || "",
+      });
+    }
+
+    setMessageText("");
+    setAttachedFile(null);
+  };
+
+  // -------------------- УПОМЯНУТЬ ПОЛЬЗОВАТЕЛЯ ПО КЛИКУ --------------------
+
+  const handleUserClick = (userId: string) => {
+    const user = usersMap[userId];
+    const nameForMention =
+      user?.firstName || user?.lastName
+        ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
+        : user?.email || "";
+    if (!nameForMention) return;
+
+    const mention = `@${nameForMention} `;
+    if (messageText.includes(mention)) return;
+    setMessageText((prev) => (prev ? prev + " " + mention : mention));
+  };
+
+  // -------------------- ПРОФИЛЬ --------------------
+
+  const [profileFirstName, setProfileFirstName] = useState("");
+  const [profileLastName, setProfileLastName] = useState("");
+  const [profilePosition, setProfilePosition] = useState("");
+  const [profileDepartment, setProfileDepartment] = useState("");
+  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    if (!userProfile) return;
+    setProfileFirstName(userProfile.firstName || "");
+    setProfileLastName(userProfile.lastName || "");
+    setProfilePosition(userProfile.position || "");
+    setProfileDepartment(userProfile.department || "");
+  }, [userProfile]);
+
+  const handleSaveProfile = async () => {
+    if (!firebaseUser || !userProfile) return;
+
+    let avatarUrl = userProfile.avatarUrl || "";
+
+    if (profileAvatarFile) {
+      const avatarRef = ref(storage, `avatars/${firebaseUser.uid}.jpg`);
+      await uploadBytes(avatarRef, profileAvatarFile);
+      avatarUrl = await getDownloadURL(avatarRef);
+    }
+
+    const userRef = doc(db, "users", firebaseUser.uid);
+    await updateDoc(userRef, {
+      firstName: profileFirstName.trim(),
+      lastName: profileLastName.trim(),
+      position: profilePosition.trim(),
+      department: profileDepartment.trim(),
+      avatarUrl,
+    });
+
+    setUserProfile({
+      ...userProfile,
+      firstName: profileFirstName.trim(),
+      lastName: profileLastName.trim(),
+      position: profilePosition.trim(),
+      department: profileDepartment.trim(),
+      avatarUrl,
+    });
+
+    setIsProfileModalOpen(false);
+  };
+
+ 
