@@ -9,8 +9,10 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -98,7 +100,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // грузим профиль
       const userDocRef = doc(db, "users", user.uid);
       const snap = await getDoc(userDocRef);
 
@@ -119,7 +120,6 @@ const App: React.FC = () => {
           department: loadedProfile.department,
         });
       } else {
-        // создаём базовый профиль
         const baseProfile: UserProfile = {
           id: user.uid,
           email: user.email || "",
@@ -187,7 +187,6 @@ const App: React.FC = () => {
       });
       setChats(list);
 
-      // если нет активного чата — выбираем первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
@@ -262,12 +261,81 @@ const App: React.FC = () => {
     }
   };
 
+  // -------- Удаление чата --------
+
+  const handleDeleteChat = async (chatId: string) => {
+    if (!firebaseUser) return;
+    if (!window.confirm("Удалить чат со всеми сообщениями?")) return;
+
+    try {
+      // удаляем сообщения этого чата
+      const messagesCol = collection(db, "messages");
+      const q = query(messagesCol, where("chatId", "==", chatId));
+      const snap = await getDocs(q);
+
+      const promises: Promise<void>[] = [];
+      snap.forEach((d) => {
+        promises.push(deleteDoc(doc(db, "messages", d.id)));
+      });
+      await Promise.all(promises);
+
+      // удаляем сам чат
+      await deleteDoc(doc(db, "chats", chatId));
+
+      setMessages((prev) => prev.filter((m) => m.chatId !== chatId));
+      setChats((prev) => prev.filter((c) => c.id !== chatId));
+
+      setActiveChatId((prev) => {
+        if (prev !== chatId) return prev;
+        const rest = chats.filter((c) => c.id !== chatId);
+        return rest[0]?.id || null;
+      });
+    } catch (err) {
+      console.error("Delete chat error", err);
+      alert("Не удалось удалить чат");
+    }
+  };
+
+  // -------- Удаление сообщения --------
+
+  const handleDeleteMessage = async (messageId: string, userId: string) => {
+    if (!firebaseUser) return;
+    if (firebaseUser.uid !== userId) {
+      alert("Удалять можно только свои сообщения");
+      return;
+    }
+    if (!window.confirm("Удалить сообщение?")) return;
+
+    try {
+      await deleteDoc(doc(db, "messages", messageId));
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch (err) {
+      console.error("Delete message error", err);
+      alert("Не удалось удалить сообщение");
+    }
+  };
+
   // -------- Отправка сообщения --------
 
   const handleSendMessage = async () => {
     if (!firebaseUser || !activeChatId) return;
     const trimmed = newMessage.trim();
     if (!trimmed) return;
+
+    const localId = `local-${Date.now()}`;
+
+    // оптимистично добавляем сообщение, чтобы сразу увидеть его в списке
+    const optimistic: Message = {
+      id: localId,
+      chatId: activeChatId,
+      text: trimmed,
+      createdAt: new Date(),
+      userId: firebaseUser.uid,
+      userName: profile?.name || firebaseUser.email || "Без имени",
+      userAvatarUrl: profile?.avatarUrl || undefined,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    setNewMessage("");
 
     try {
       setIsSending(true);
@@ -282,19 +350,16 @@ const App: React.FC = () => {
         userAvatarUrl: profile?.avatarUrl || null,
       });
 
-      // обновляем метаданные чата
       const chatDocRef = doc(db, "chats", activeChatId);
       const chatSnap = await getDoc(chatDocRef);
       const currentCount = chatSnap.exists()
-        ? (chatSnap.data()?.messageCount as number) || 0
+        ? ((chatSnap.data()?.messageCount as number) || 0)
         : 0;
 
       await updateDoc(chatDocRef, {
         lastMessageAt: serverTimestamp(),
         messageCount: currentCount + 1,
       });
-
-      setNewMessage("");
     } catch (e) {
       console.error("Send message error", e);
       alert("Не удалось отправить сообщение");
@@ -335,7 +400,7 @@ const App: React.FC = () => {
       const chatDocRef = doc(db, "chats", activeChatId);
       const snap = await getDoc(chatDocRef);
       const currentCount = snap.exists()
-        ? (snap.data()?.messageCount as number) || 0
+        ? ((snap.data()?.messageCount as number) || 0)
         : 0;
 
       await updateDoc(chatDocRef, {
@@ -470,12 +535,25 @@ const App: React.FC = () => {
                     "chat-item" +
                     (chat.id === activeChatId ? " chat-item-active" : "")
                   }
-                  onClick={() => setActiveChatId(chat.id)}
                 >
-                  <div className="chat-item-title">{chat.title}</div>
-                  <div className="chat-item-sub">
-                    Сообщений: {chat.messageCount || 0}
+                  <div
+                    className="chat-item-main"
+                    onClick={() => setActiveChatId(chat.id)}
+                  >
+                    <div className="chat-item-title">{chat.title}</div>
+                    <div className="chat-item-sub">
+                      Сообщений: {chat.messageCount || 0}
+                    </div>
                   </div>
+                  <button
+                    className="chat-delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteChat(chat.id);
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
 
@@ -501,6 +579,9 @@ const App: React.FC = () => {
             <div className="messages-area">
               {messages.map((m) => {
                 const isMine = m.userId === firebaseUser.uid;
+                const initials =
+                  m.userName?.charAt(0)?.toUpperCase() || "?";
+
                 return (
                   <div
                     key={m.id}
@@ -508,20 +589,27 @@ const App: React.FC = () => {
                       "message-row" + (isMine ? " message-row-mine" : "")
                     }
                   >
-                    {!isMine && (
-                      <div className="message-avatar">
-                        {m.userAvatarUrl ? (
-                          <img src={m.userAvatarUrl} alt={m.userName} />
-                        ) : (
-                          <div className="avatar-placeholder">
-                            {m.userName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div className="message-avatar">
+                      {m.userAvatarUrl ? (
+                        <img src={m.userAvatarUrl} alt={m.userName} />
+                      ) : (
+                        <div className="avatar-placeholder">{initials}</div>
+                      )}
+                    </div>
+
                     <div className="message-bubble-wrapper">
                       <div className="message-meta">
                         <span className="message-author">{m.userName}</span>
+                        {isMine && (
+                          <button
+                            className="message-delete-btn"
+                            onClick={() =>
+                              handleDeleteMessage(m.id, m.userId)
+                            }
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                       <div className="message-bubble">
                         {m.text && <div>{m.text}</div>}
