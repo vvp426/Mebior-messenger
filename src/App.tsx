@@ -597,6 +597,14 @@ const App: React.FC = () => {
                                 src={m.fileUrl}
                                 alt={m.fileName || "Изображение"}
                                 className="file-image-thumb"
+                                style={{
+                                  maxWidth: "160px",
+                                  maxHeight: "120px",
+                                  borderRadius: "12px",
+                                  objectFit: "cover",
+                                  display: "block",
+                                  marginBottom: "6px",
+                                }}
                               />
                             )}
                             <a
