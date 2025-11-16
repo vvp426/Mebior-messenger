@@ -1,16 +1,16 @@
-// src/firebase.ts
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
+// ⚠️ СЮДА подставь СВОЮ конфигурацию из Firebase console
 const firebaseConfig = {
-  apiKey: "AIzaSyCWyQ7d4zdKGkWwY_U7WuDqAf70TFd-ocs",
-  authDomain: "mebior.firebaseapp.com",
-  projectId: "mebior",
-  storageBucket: "mebior.firebasestorage.app",
-  messagingSenderId: "1099465225536",
-  appId: "1:1099465225536:web:e2fb5161cc58a1982f76a5",
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_AUTH_DOMAIN',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_STORAGE_BUCKET',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId: 'YOUR_APP_ID',
 };
 
 const app = initializeApp(firebaseConfig);
