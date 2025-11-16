@@ -9,8 +9,8 @@ const firebaseConfig = {
   authDomain: "mebior.firebaseapp.com",
   projectId: "mebior",
   storageBucket: "mebior.firebasestorage.app",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  messagingSenderId: "1099465225536",
+  appId: "1:1099465225536:web:e2fb5161cc58a1982f76a5",
 };
 
 const app = initializeApp(firebaseConfig);
