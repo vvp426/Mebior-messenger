@@ -228,7 +228,7 @@ const App: React.FC = () => {
 
     const messagesCol = collection(db, "messages");
 
-    // ВАЖНО: без orderBy, чтобы не требовался индекс.
+    // без orderBy, сортируем на клиенте
     const q = query(messagesCol, where("chatId", "==", activeChatId));
 
     const unsub = onSnapshot(
@@ -250,7 +250,6 @@ const App: React.FC = () => {
           });
         });
 
-        // Сортируем по времени на клиенте
         list.sort((a, b) => {
           const ta =
             (a.createdAt && a.createdAt.toMillis && a.createdAt.toMillis()) ||
@@ -322,7 +321,6 @@ const App: React.FC = () => {
         userAvatarUrl: profile?.avatarUrl || null,
       });
 
-      // обновляем метаданные чата
       const chatDocRef = doc(db, "chats", activeChatId);
       const chatSnap = await getDoc(chatDocRef);
       const currentCount = chatSnap.exists()
@@ -547,6 +545,16 @@ const App: React.FC = () => {
             <div className="messages-area">
               {messages.map((m) => {
                 const isMine = m.userId === firebaseUser.uid;
+                const isImage =
+                  (m.fileName &&
+                    m.fileName.match(
+                      /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i
+                    )) ||
+                  (m.fileUrl &&
+                    m.fileUrl.match(
+                      /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i
+                    ));
+
                 return (
                   <div
                     key={m.id}
@@ -554,32 +562,52 @@ const App: React.FC = () => {
                       "message-row" + (isMine ? " message-row-mine" : "")
                     }
                   >
-                    {!isMine && (
-                      <div className="message-avatar">
-                        {m.userAvatarUrl ? (
-                          <img src={m.userAvatarUrl} alt={m.userName} />
-                        ) : (
-                          <div className="avatar-placeholder">
-                            {m.userName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div className="message-avatar">
+                      {m.userAvatarUrl ? (
+                        <img src={m.userAvatarUrl} alt={m.userName} />
+                      ) : (
+                        <div className="avatar-placeholder">
+                          {m.userName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
                     <div className="message-bubble-wrapper">
                       <div className="message-meta">
-                        <span className="message-author">{m.userName}</span>
+                        <span
+                          className="message-author"
+                          onClick={() =>
+                            setNewMessage((prev) =>
+                              prev && prev.trim().length > 0
+                                ? prev + ` @${m.userName} `
+                                : `@${m.userName} `
+                            )
+                          }
+                        >
+                          {m.userName}
+                        </span>
                       </div>
                       <div className="message-bubble">
                         {m.text && <div>{m.text}</div>}
+
                         {m.fileUrl && (
-                          <a
-                            href={m.fileUrl}
-                            className="file-chip"
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            📎 {m.fileName || "Файл"}
-                          </a>
+                          <div className="message-file">
+                            {isImage && (
+                              <img
+                                src={m.fileUrl}
+                                alt={m.fileName || "Изображение"}
+                                className="file-image-thumb"
+                              />
+                            )}
+                            <a
+                              href={m.fileUrl}
+                              className="file-chip"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              📎 {m.fileName || "Файл"}
+                            </a>
+                          </div>
                         )}
                       </div>
                     </div>
