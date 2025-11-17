@@ -1,14 +1,6 @@
 // src/App.tsx
-
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
+import React, { useEffect, useMemo, useState } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
-import { signOut } from "firebase/auth";
-
 import {
   addDoc,
   collection,
@@ -21,449 +13,261 @@ import {
   setDoc,
   updateDoc,
   where,
+  increment,
 } from "firebase/firestore";
-
 import {
-  getDownloadURL,
   ref as storageRef,
   uploadBytes,
+  getDownloadURL,
 } from "firebase/storage";
 
-import { auth, db, storage } from "./firebase";
-
+import { db, storage } from "./firebase";
 import type { Chat, Message, UserProfile } from "./types";
-
-import "./index.css";
-import "./App.css";
 
 type AppProps = {
   firebaseUser: FirebaseUser;
+  onSignOut: () => void;
 };
 
-const App: React.FC<AppProps> = ({ firebaseUser }) => {
-  // -------- Состояние пользователя / профиля --------
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+const App: React.FC<AppProps> = ({ firebaseUser, onSignOut }) => {
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
 
+  const [newChatTitle, setNewChatTitle] = useState("");
+  const [messageText, setMessageText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState<{
     name: string;
     position: string;
     department: string;
-  }>({
-    name: "",
-    position: "",
-    department: "",
-  });
+  }>({ name: "", position: "", department: "" });
 
-  const [isLoadingUser, setIsLoadingUser] = useState(true);
-
-  // -------- Чаты / сообщения --------
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [isCreatingChat, setIsCreatingChat] = useState(false);
-
-  // -------- Вычисляемое имя --------
-  const userDisplayName = useMemo<string>(() => {
-    if (profile?.name && profile.name.trim().length > 0) {
-      return profile.name;
-    }
-    return firebaseUser.email ?? "";
-  }, [profile, firebaseUser]);
-
-  // =====================================================================
-  //    ЗАГРУЗКА / СОЗДАНИЕ ПРОФИЛЯ ПОЛЬЗОВАТЕЛЯ
-  // =====================================================================
+  // ---------------------------------------------------------------------------
+  //  Профиль пользователя (коллекция users)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    let cancelled = false;
+    const uid = firebaseUser.uid;
+    const userDocRef = doc(db, "users", uid);
 
-    const loadProfile = async () => {
-      setIsLoadingUser(true);
-      try {
-        const userDocRef = doc(db, "users", firebaseUser.uid);
-        const snap = await getDoc(userDocRef);
+    const loadOrCreate = async () => {
+      const snap = await getDoc(userDocRef);
 
-        if (!snap.exists()) {
-          // создаём базовый профиль
-          const baseProfile: UserProfile = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email ?? "",
-            name: firebaseUser.email ?? "",
-            position: "",
-            department: "",
-            avatarUrl: null,
-          };
-
-          await setDoc(userDocRef, {
-            email: baseProfile.email,
-            name: baseProfile.name,
-            position: "",
-            department: "",
-            avatarUrl: null,
-            createdAt: serverTimestamp(),
-          });
-
-          if (!cancelled) {
-            setProfile(baseProfile);
-            setProfileDraft({
-              name: baseProfile.name ?? "",
-              position: "",
-              department: "",
-            });
-          }
-        } else {
-          const data = snap.data() as any;
-          const loaded: UserProfile = {
-            id: firebaseUser.uid,
-            email: data.email ?? firebaseUser.email ?? "",
-            name: data.name ?? "",
-            position: data.position ?? "",
-            department: data.department ?? "",
-            avatarUrl: data.avatarUrl ?? null,
-          };
-
-          if (!cancelled) {
-            setProfile(loaded);
-            setProfileDraft({
-              name: loaded.name ?? "",
-              position: loaded.position ?? "",
-              department: loaded.department ?? "",
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Error loading profile", err);
-      } finally {
-        if (!cancelled) {
-          setIsLoadingUser(false);
-        }
+      if (!snap.exists()) {
+        const profile: Omit<UserProfile, "id"> = {
+          email: firebaseUser.email ?? "",
+          name: firebaseUser.displayName ?? "",
+          position: "",
+          department: "",
+          avatarUrl: null,
+          createdAt: serverTimestamp() as any,
+        };
+        await setDoc(userDocRef, profile);
       }
     };
 
-    loadProfile();
+    void loadOrCreate();
 
-    return () => {
-      cancelled = true;
-    };
+    const unsub = onSnapshot(userDocRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as Omit<UserProfile, "id">;
+      const full: UserProfile = {
+        id: snap.id,
+        ...data,
+      };
+      setUserProfile(full);
+      setProfileDraft({
+        name: full.name ?? "",
+        position: full.position ?? "",
+        department: full.department ?? "",
+      });
+    });
+
+    return () => unsub();
   }, [firebaseUser]);
 
-  // =====================================================================
-  //    ПОДПИСКА НА ЧАТЫ
-  // =====================================================================
-
+  // ---------------------------------------------------------------------------
+  //  Список чатов
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const chatsCol = collection(db, "chats");
-    const q = query(chatsCol, orderBy("lastMessageAt", "desc"));
+    const chatsRef = collection(db, "chats");
+    const q = query(chatsRef, orderBy("lastMessageAt", "desc"));
 
     const unsub = onSnapshot(q, (snap) => {
-      const list: Chat[] = [];
-      snap.forEach((d) => {
-        const data = d.data() as any;
-        list.push({
-          id: d.id,
-          title: data.title ?? "Без названия",
-          createdAt: data.createdAt,
-          lastMessageAt: data.lastMessageAt,
-          messageCount: data.messageCount,
-        });
+      const list: Chat[] = snap.docs.map((d) => {
+        const data = d.data() as Omit<Chat, "id">;
+        return { id: d.id, ...data };
       });
-
       setChats(list);
 
-      // если активный чат ещё не выбран — выбираем первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
     });
 
     return () => unsub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeChatId]);
 
-  // =====================================================================
-  //    ПОДПИСКА НА СООБЩЕНИЯ В ВЫБРАННОМ ЧАТЕ
-  // =====================================================================
-
+  // ---------------------------------------------------------------------------
+  //  Сообщения выбранного чата
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!activeChatId) {
       setMessages([]);
       return;
     }
 
-    const messagesCol = collection(db, "messages");
+    const msgsRef = collection(db, "messages");
     const q = query(
-      messagesCol,
+      msgsRef,
       where("chatId", "==", activeChatId),
       orderBy("createdAt", "asc")
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      const list: Message[] = [];
-      snap.forEach((d) => {
-        const data = d.data() as any;
-        list.push({
-          id: d.id,
-          chatId: data.chatId,
-          userId: data.userId,
-          userName: data.userName,
-          text: data.text ?? "",
-          createdAt: data.createdAt,
-          fileName: data.fileName ?? null,
-          fileUrl: data.fileUrl ?? null,
-          userAvatarUrl: data.userAvatarUrl ?? null,
-        });
+      const list: Message[] = snap.docs.map((d) => {
+        const data = d.data() as Omit<Message, "id">;
+        return { id: d.id, ...data };
       });
-
       setMessages(list);
     });
 
     return () => unsub();
   }, [activeChatId]);
 
-  // =====================================================================
-  //    СОЗДАНИЕ НОВОГО ЧАТА
-  // =====================================================================
-
+  // ---------------------------------------------------------------------------
+  //  Создать чат
+  // ---------------------------------------------------------------------------
   const handleCreateChat = async () => {
-    const title = window.prompt("Название чата");
+    const title = newChatTitle.trim();
     if (!title) return;
 
-    try {
-      setIsCreatingChat(true);
+    const chatsRef = collection(db, "chats");
+    const docRef = await addDoc(chatsRef, {
+      title,
+      createdAt: serverTimestamp(),
+      createdBy: firebaseUser.uid,
+      lastMessageAt: serverTimestamp(),
+      messageCount: 0,
+    });
 
-      const chatsCol = collection(db, "chats");
-      const chatDoc = await addDoc(chatsCol, {
-        title,
-        createdAt: serverTimestamp(),
-        lastMessageAt: serverTimestamp(),
-        createdBy: firebaseUser.uid,
-        messageCount: 0,
-      });
-
-      setActiveChatId(chatDoc.id);
-    } catch (err) {
-      console.error("Create chat error", err);
-      alert("Не удалось создать чат");
-    } finally {
-      setIsCreatingChat(false);
-    }
+    setNewChatTitle("");
+    setActiveChatId(docRef.id);
   };
 
-  // =====================================================================
-  //    ОТПРАВКА ТЕКСТОВОГО СООБЩЕНИЯ
-  // =====================================================================
-
+  // ---------------------------------------------------------------------------
+  //  Отправить сообщение
+  // ---------------------------------------------------------------------------
   const handleSendMessage = async () => {
-    if (!activeChatId) return;
-    const trimmed = newMessage.trim();
-    if (!trimmed) return;
+    if (!activeChatId || (!messageText.trim() && !file)) return;
+    if (!userProfile) return;
 
-    try {
-      setIsSending(true);
+    const msgsRef = collection(db, "messages");
 
-      const messagesCol = collection(db, "messages");
-      await addDoc(messagesCol, {
-        chatId: activeChatId,
-        text: trimmed,
-        createdAt: serverTimestamp(),
-        userId: firebaseUser.uid,
-        userName: userDisplayName || firebaseUser.email || "Без имени",
-        userAvatarUrl: profile?.avatarUrl ?? null,
-      });
+    let uploadedFileUrl: string | null = null;
+    let uploadedFileName: string | null = null;
 
-      // обновляем счётчик и lastMessageAt в чате
-      const chatDocRef = doc(db, "chats", activeChatId);
-      const snap = await getDoc(chatDocRef);
-      const currentCount = snap.exists()
-        ? (snap.data()?.messageCount as number) || 0
-        : 0;
-
-      await updateDoc(chatDocRef, {
-        lastMessageAt: serverTimestamp(),
-        messageCount: currentCount + 1,
-      });
-
-      setNewMessage("");
-    } catch (err) {
-      console.error("Send message error", err);
-      alert("Не удалось отправить сообщение");
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  // =====================================================================
-  //    ОТПРАВКА ФАЙЛА
-  // =====================================================================
-
-  const handleFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    if (!activeChatId) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsSending(true);
-
+    if (file) {
       const path = `chatFiles/${activeChatId}/${Date.now()}_${file.name}`;
       const ref = storageRef(storage, path);
       await uploadBytes(ref, file);
-      const url = await getDownloadURL(ref);
-
-      const messagesCol = collection(db, "messages");
-      await addDoc(messagesCol, {
-        chatId: activeChatId,
-        text: "",
-        fileName: file.name,
-        fileUrl: url,
-        createdAt: serverTimestamp(),
-        userId: firebaseUser.uid,
-        userName: userDisplayName || firebaseUser.email || "Без имени",
-        userAvatarUrl: profile?.avatarUrl ?? null,
-      });
-
-      const chatDocRef = doc(db, "chats", activeChatId);
-      const snap = await getDoc(chatDocRef);
-      const currentCount = snap.exists()
-        ? (snap.data()?.messageCount as number) || 0
-        : 0;
-
-      await updateDoc(chatDocRef, {
-        lastMessageAt: serverTimestamp(),
-        messageCount: currentCount + 1,
-      });
-
-      e.target.value = "";
-    } catch (err) {
-      console.error("File upload error", err);
-      alert("Не удалось отправить файл");
-    } finally {
-      setIsSending(false);
+      uploadedFileUrl = await getDownloadURL(ref);
+      uploadedFileName = file.name;
     }
+
+    await addDoc(msgsRef, {
+      chatId: activeChatId,
+      text: messageText.trim() || null,
+      createdAt: serverTimestamp(),
+      senderId: firebaseUser.uid,
+      senderEmail: userProfile.email,
+      senderName: userProfile.name ?? userProfile.email,
+      fileUrl: uploadedFileUrl,
+      fileName: uploadedFileName,
+    });
+
+    // обновляем мету чата
+    const chatDocRef = doc(db, "chats", activeChatId);
+    await updateDoc(chatDocRef, {
+      lastMessageAt: serverTimestamp(),
+      messageCount: increment(1),
+    });
+
+    setMessageText("");
+    setFile(null);
   };
 
-  // =====================================================================
-  //    СОХРАНЕНИЕ ПРОФИЛЯ
-  // =====================================================================
+  const currentChat = useMemo(
+    () => chats.find((c) => c.id === activeChatId) ?? null,
+    [chats, activeChatId]
+  );
 
-  const handleSaveProfile = async () => {
-    if (!profile) return;
-
-    try {
-      const userDocRef = doc(db, "users", profile.id);
-      await updateDoc(userDocRef, {
-        name: profileDraft.name,
-        position: profileDraft.position,
-        department: profileDraft.department,
-      });
-
-      setProfile({
-        ...profile,
-        name: profileDraft.name,
-        position: profileDraft.position,
-        department: profileDraft.department,
-      });
-
-      setIsProfileOpen(false);
-    } catch (err) {
-      console.error("Profile update error", err);
-      alert("Не удалось сохранить профиль");
-    }
-  };
-
-  // =====================================================================
-  //    ЗАГРУЗКА АВАТАРА
-  // =====================================================================
-
-  const handleAvatarChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    if (!profile) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setUploadingAvatar(true);
-      const ref = storageRef(storage, `avatars/${profile.id}.jpg`);
-      await uploadBytes(ref, file);
-      const url = await getDownloadURL(ref);
-
-      const userDocRef = doc(db, "users", profile.id);
-      await updateDoc(userDocRef, { avatarUrl: url });
-
-      setProfile({ ...profile, avatarUrl: url });
-    } catch (err) {
-      console.error("Avatar upload error", err);
-      alert("Ошибка загрузки аватара");
-    } finally {
-      setUploadingAvatar(false);
-    }
-  };
-
-  // =====================================================================
-  //    ВЫХОД
-  // =====================================================================
-
-  const handleSignOut = async () => {
-    await signOut(auth);
-    window.location.href = "/";
-  };
-
-  // =====================================================================
-  //    РЕНДЕР
-  // =====================================================================
-
-  if (isLoadingUser || !profile) {
-    return (
-      <div className="app-root">
-        <div className="loading-text">Загрузка пользователя…</div>
-      </div>
+  const handleProfileSave = async () => {
+    if (!userProfile) return;
+    const userDocRef = doc(db, "users", userProfile.id);
+    await setDoc(
+      userDocRef,
+      {
+        name: profileDraft.name.trim(),
+        position: profileDraft.position.trim(),
+        department: profileDraft.department.trim(),
+      },
+      { merge: true }
     );
-  }
+    setIsProfileOpen(false);
+  };
 
-  const activeChat = chats.find((c) => c.id === activeChatId) || null;
-
+  // ---------------------------------------------------------------------------
+  //  Рендер
+  // ---------------------------------------------------------------------------
   return (
     <div className="app-root">
-      <div className="chat-card">
-        {/* ШАПКА */}
-        <header className="chat-header">
-          <div className="chat-header-left">
-            <h1 className="chat-logo">ORG MESSENGER</h1>
-            <div className="chat-subtitle">
-              Вы вошли как: {userDisplayName}{" "}
-              {firebaseUser.email ? `(${firebaseUser.email})` : ""}
-            </div>
-          </div>
-          <div className="header-buttons">
-            <button onClick={() => setIsProfileOpen(true)}>Профиль</button>
-            <button onClick={handleSignOut}>Выйти</button>
+      <div className="app-shell">
+        <header className="app-header">
+          <div className="app-title">ORG MESSENGER</div>
+          <div className="app-user">
+            <span className="app-user-email">
+              Вы вошли как: {firebaseUser.email}
+            </span>
+            <button
+              className="app-header-btn"
+              onClick={() => setIsProfileOpen(true)}
+            >
+              Профиль
+            </button>
+            <button className="app-header-btn" onClick={onSignOut}>
+              Выйти
+            </button>
           </div>
         </header>
 
-        {/* ОСНОВНОЙ ЛЕЙАУТ */}
-        <div className="chat-layout">
-          {/* САЙДБАР ЧАТОВ */}
+        <div className="app-body">
+          {/* Левая колонка — чаты */}
           <aside className="chat-sidebar">
-            <div className="sidebar-header">
-              <div className="sidebar-title">Чаты</div>
+            <div className="chat-sidebar-header">
+              <div className="chat-sidebar-title">Чаты</div>
               <button
-                className="new-chat-button"
+                className="primary-btn small"
                 onClick={handleCreateChat}
-                disabled={isCreatingChat}
+                disabled={!newChatTitle.trim()}
               >
                 + Новый
               </button>
             </div>
 
+            <input
+              className="chat-new-input"
+              placeholder="Название чата"
+              value={newChatTitle}
+              onChange={(e) => setNewChatTitle(e.target.value)}
+            />
+
             <div className="chat-list">
               {chats.map((chat) => (
-                <div
+                <button
                   key={chat.id}
                   className={
                     "chat-item" +
@@ -472,214 +276,168 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
                   onClick={() => setActiveChatId(chat.id)}
                 >
                   <div className="chat-item-title">{chat.title}</div>
-                  <div className="chat-item-sub">
+                  <div className="chat-item-meta">
                     Сообщений: {chat.messageCount ?? 0}
                   </div>
-                </div>
+                </button>
               ))}
-
               {chats.length === 0 && (
-                <div className="chat-empty">
-                  Чатов пока нет. Создайте первый.
-                </div>
+                <div className="chat-empty">Чатов пока нет</div>
               )}
             </div>
           </aside>
 
-          {/* ОСНОВНОЕ ОКНО ЧАТА */}
+          {/* Правая часть — сообщения */}
           <main className="chat-main">
-            <div className="chat-main-header">
-              <div className="chat-main-title">
-                {activeChat?.title ?? "Чат не выбран"}
-              </div>
-              <div className="chat-main-subtitle">
-                Сообщений: {messages.length}
-              </div>
-            </div>
-
-            <div className="messages-area">
-              {messages.map((m) => {
-                const isMine = m.userId === firebaseUser.uid;
-
-                return (
-                  <div
-                    key={m.id}
-                    className={
-                      "message-row" + (isMine ? " message-row-mine" : "")
-                    }
-                  >
-                    {!isMine && (
-                      <div className="message-avatar">
-                        {m.userAvatarUrl ? (
-                          <img src={m.userAvatarUrl} alt={m.userName} />
-                        ) : (
-                          <div className="avatar-placeholder">
-                            {m.userName
-                              .charAt(0)
-                              .toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="message-bubble-wrapper">
-                      <div className="message-meta">
-                        <span className="message-author">
-                          {m.userName}
-                        </span>
-                      </div>
-                      <div className="message-bubble">
-                        {m.text && <div>{m.text}</div>}
-
-                        {m.fileUrl && (
-                          <a
-                            href={m.fileUrl}
-                            className="file-chip"
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            📎 {m.fileName || "Файл"}
-                          </a>
-                        )}
-                      </div>
-                    </div>
+            {currentChat ? (
+              <>
+                <div className="chat-main-header">
+                  <div className="chat-main-title">{currentChat.title}</div>
+                  <div className="chat-main-meta">
+                    Сообщений: {currentChat.messageCount ?? 0}
                   </div>
-                );
-              })}
+                </div>
 
-              {messages.length === 0 && (
-                <div className="messages-empty">Сообщений пока нет</div>
-              )}
-            </div>
+                <div className="message-list">
+                  {messages.length === 0 ? (
+                    <div className="message-empty">
+                      Сообщений пока нет
+                    </div>
+                  ) : (
+                    messages.map((m) => {
+                      const isMine = m.senderId === firebaseUser.uid;
+                      const isImage =
+                        m.fileUrl &&
+                        /\.(png|jpe?g|gif|webp)$/i.test(m.fileUrl);
 
-            {/* НИЖНЯЯ ПАНЕЛЬ ВВОДА */}
-            <div className="chat-input-row">
-              <label className="file-button">
-                📎 Файл
-                <input type="file" onChange={handleFileChange} />
-              </label>
+                      return (
+                        <div
+                          key={m.id}
+                          className={
+                            "message-row" +
+                            (isMine ? " message-row-mine" : " message-row-other")
+                          }
+                        >
+                          <div className="message-bubble">
+                            <div className="message-sender">
+                              {m.senderName ?? m.senderEmail ?? "Без имени"}
+                            </div>
+                            {m.text && (
+                              <div className="message-text">{m.text}</div>
+                            )}
+                            {m.fileUrl && (
+                              <div className="message-attachment">
+                                {isImage ? (
+                                  <img
+                                    src={m.fileUrl}
+                                    alt={m.fileName ?? "image"}
+                                    className="message-image"
+                                  />
+                                ) : (
+                                  <a
+                                    className="message-file-link"
+                                    href={m.fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {m.fileName ?? "Файл"}
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
 
-              <input
-                className="chat-input"
-                placeholder="Сообщение"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-              />
+                <div className="message-input-row">
+                  <label className="file-button">
+                    <span>📎 Файл</span>
+                    <input
+                      type="file"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        setFile(f);
+                      }}
+                    />
+                  </label>
 
-              <button
-                className="send-button"
-                onClick={handleSendMessage}
-                disabled={isSending || !activeChatId}
-              >
-                Отправить
-              </button>
-            </div>
+                  <input
+                    className="message-input"
+                    placeholder="Сообщение"
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendMessage();
+                      }
+                    }}
+                  />
+
+                  <button
+                    className="primary-btn"
+                    onClick={handleSendMessage}
+                    disabled={!messageText.trim() && !file}
+                  >
+                    Отправить
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="chat-placeholder">
+                Выберите чат или создайте новый
+              </div>
+            )}
           </main>
         </div>
       </div>
 
-      {/* МОДАЛКА ПРОФИЛЯ */}
+      {/* Модалка профиля */}
       {isProfileOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setIsProfileOpen(false)}
-        >
+        <div className="modal-backdrop" onClick={() => setIsProfileOpen(false)}>
           <div
-            className="modal-card"
+            className="modal"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="modal-title">Профиль</h2>
-
-            <div className="profile-row">
-              <div className="profile-avatar-block">
-                {profile.avatarUrl ? (
-                  <img
-                    src={profile.avatarUrl}
-                    alt="avatar"
-                    className="profile-avatar-img"
-                  />
-                ) : (
-                  <div className="profile-avatar-placeholder">
-                    {userDisplayName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-
-                <label className="avatar-upload-button">
-                  {uploadingAvatar ? "Загрузка…" : "Сменить аватар"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarChange}
-                    disabled={uploadingAvatar}
-                  />
-                </label>
-              </div>
-
-              <div className="profile-fields">
-                <div className="profile-field">
-                  <label>Email</label>
-                  <input value={profile.email} disabled />
-                </div>
-
-                <div className="profile-field">
-                  <label>Имя</label>
-                  <input
-                    value={profileDraft.name}
-                    onChange={(e) =>
-                      setProfileDraft((d) => ({
-                        ...d,
-                        name: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="profile-field">
-                  <label>Должность</label>
-                  <input
-                    value={profileDraft.position}
-                    onChange={(e) =>
-                      setProfileDraft((d) => ({
-                        ...d,
-                        position: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="profile-field">
-                  <label>Подразделение</label>
-                  <input
-                    value={profileDraft.department}
-                    onChange={(e) =>
-                      setProfileDraft((d) => ({
-                        ...d,
-                        department: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
+            <h2>Профиль</h2>
+            <div className="modal-field">
+              <label>Имя</label>
+              <input
+                value={profileDraft.name}
+                onChange={(e) =>
+                  setProfileDraft((p) => ({ ...p, name: e.target.value }))
+                }
+              />
+            </div>
+            <div className="modal-field">
+              <label>Должность</label>
+              <input
+                value={profileDraft.position}
+                onChange={(e) =>
+                  setProfileDraft((p) => ({ ...p, position: e.target.value }))
+                }
+              />
+            </div>
+            <div className="modal-field">
+              <label>Подразделение</label>
+              <input
+                value={profileDraft.department}
+                onChange={(e) =>
+                  setProfileDraft((p) => ({
+                    ...p,
+                    department: e.target.value,
+                  }))
+                }
+              />
             </div>
 
-            <div className="modal-footer">
-              <button
-                className="secondary-button"
-                onClick={() => setIsProfileOpen(false)}
-              >
-                Отмена
-              </button>
-
-              <button
-                className="primary-button"
-                onClick={handleSaveProfile}
-              >
+            <div className="modal-actions">
+              <button onClick={() => setIsProfileOpen(false)}>Отмена</button>
+              <button className="primary-btn" onClick={handleProfileSave}>
                 Сохранить
               </button>
             </div>
