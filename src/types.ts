@@ -1,29 +1,28 @@
 export interface UserProfile {
   id: string;
   email: string;
-  fullName?: string;
-  position?: string;
-  department?: string;
+  name?: string;
   avatarUrl?: string | null;
-  createdAt?: Date | null;
+  department?: string;
+  position?: string;
+}
+
+export interface Message {
+  id: string;
+  uid: string;
+  text?: string;
+
+  createdAt: any;
+
+  // файлов у тебя НЕТ — делаем опциональными
+  fileUrl?: string | null;
+  fileName?: string | null;
 }
 
 export interface Chat {
   id: string;
   title: string;
-  createdAt: Date | null;
-}
-
-export interface Message {
-  id: string;
-  chatId: string;
-  text: string;
-  createdAt: Date | null;
-  userId: string;
-  userEmail?: string | null;
-  userName?: string | null;
-  userAvatarUrl?: string | null;
-  attachmentUrl?: string | null;
-  attachmentName?: string | null;
-  attachmentType?: string | null;
+  createdAt: any;
+  lastMessageAt?: any;
+  messageCount: number;
 }
