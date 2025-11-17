@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
   createUserWithEmailAndPassword,
@@ -88,6 +88,12 @@ const App: React.FC = () => {
     department: string;
   }>({ name: "", position: "", department: "" });
 
+  // индикаторы новых сообщений по чатам (в рамках одной сессии)
+  const [chatNewFlags, setChatNewFlags] = useState<Record<string, boolean>>(
+    {}
+  );
+  const chatCountsRef = useRef<Record<string, number>>({});
+
   const userDisplayName = useMemo(
     () => profile?.name || firebaseUser?.email || "",
     [profile, firebaseUser]
@@ -128,8 +134,7 @@ const App: React.FC = () => {
           department: loadedProfile.department,
         });
       } else {
-        const baseName =
-          user.email?.split("@")[0] || "Пользователь";
+        const baseName = user.email?.split("@")[0] || "Пользователь";
 
         const baseProfile: UserProfile = {
           id: user.uid,
@@ -237,7 +242,7 @@ const App: React.FC = () => {
         });
       });
 
-      // сортировка по lastMessageAt на клиенте
+      // сортировка по времени последнего сообщения
       list.sort((a, b) => {
         const ta =
           (a.lastMessageAt && a.lastMessageAt.toMillis?.()) || 0;
@@ -248,6 +253,23 @@ const App: React.FC = () => {
 
       setChats(list);
 
+      // индикаторы новых сообщений
+      setChatNewFlags((prev) => {
+        const next = { ...prev };
+        list.forEach((chat) => {
+          const newCount = chat.messageCount ?? 0;
+          const prevCount =
+            chatCountsRef.current[chat.id] ?? newCount;
+
+          // если увеличилось и чат не активный — ставим флажок
+          if (newCount > prevCount && chat.id !== activeChatId) {
+            next[chat.id] = true;
+          }
+          chatCountsRef.current[chat.id] = newCount;
+        });
+        return next;
+      });
+
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
@@ -255,7 +277,7 @@ const App: React.FC = () => {
 
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firebaseUser]);
+  }, [firebaseUser, activeChatId]);
 
   // ---------- Подписка на сообщения выбранного чата ----------
 
@@ -308,7 +330,7 @@ const App: React.FC = () => {
     return () => unsub();
   }, [firebaseUser, activeChatId]);
 
-  // ---------- Создание и удаление чатов ----------
+  // ---------- Работа с чатами ----------
 
   const handleCreateChat = async () => {
     const title = window.prompt("Название чата");
@@ -359,7 +381,18 @@ const App: React.FC = () => {
     }
   };
 
-  // ---------- Отправка сообщений ----------
+  const handleSelectChat = (chatId: string) => {
+    setActiveChatId(chatId);
+    // очистить "новые" для выбранного чата
+    setChatNewFlags((prev) => {
+      if (!prev[chatId]) return prev;
+      const next = { ...prev };
+      delete next[chatId];
+      return next;
+    });
+  };
+
+  // ---------- Сообщения ----------
 
   const handleSendMessage = async () => {
     if (!firebaseUser || !activeChatId) return;
@@ -419,8 +452,6 @@ const App: React.FC = () => {
       alert("Не удалось удалить сообщение");
     }
   };
-
-  // ---------- Отправка файла ----------
 
   const handleFileChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -530,7 +561,6 @@ const App: React.FC = () => {
     );
   }
 
-  // экран логина / регистрации
   if (!firebaseUser) {
     return (
       <div className="app-root">
@@ -627,7 +657,7 @@ const App: React.FC = () => {
                     "chat-item" +
                     (chat.id === activeChatId ? " chat-item-active" : "")
                   }
-                  onClick={() => setActiveChatId(chat.id)}
+                  onClick={() => handleSelectChat(chat.id)}
                 >
                   <div className="chat-item-header">
                     <div className="chat-item-title">{chat.title}</div>
@@ -643,6 +673,9 @@ const App: React.FC = () => {
                   </div>
                   <div className="chat-item-sub">
                     Сообщений: {chat.messageCount || 0}
+                    {chatNewFlags[chat.id] && (
+                      <span className="chat-new-dot">•</span>
+                    )}
                   </div>
                 </div>
               ))}
