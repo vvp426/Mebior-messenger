@@ -1,3 +1,5 @@
+// src/EmailAuthGate.tsx
+
 import React, { useEffect, useState } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
@@ -6,150 +8,172 @@ import {
   isSignInWithEmailLink,
   signInWithEmailLink,
 } from "firebase/auth";
-import { auth } from "./firebase";
-import "./index.css";
 
-type EmailAuthGateProps = {
-  // Функция-рендер: что рисовать, когда пользователь уже авторизован
-  children: (user: FirebaseUser) => React.ReactNode;
-};
+import { auth } from "./firebase";
+import App from "./App";
+import "./index.css";
+import "./App.css";
 
 const EMAIL_STORAGE_KEY = "org-messenger-emailForSignIn";
 
-const EmailAuthGate: React.FC<EmailAuthGateProps> = ({ children }) => {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+const EmailAuthGate: React.FC = () => {
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   const [email, setEmail] = useState("");
-  const [authError, setAuthError] = useState<string | null>(null);
   const [isSendingLink, setIsSendingLink] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
 
-  // --- Подписка на состояние авторизации ---
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // -------------------------------------------------------------------
+  //  Подписка на состояние авторизации
+  // -------------------------------------------------------------------
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
       setIsAuthLoading(false);
     });
+
     return () => unsub();
   }, []);
 
-  // --- Обработка "магической" ссылки из письма ---
+  // -------------------------------------------------------------------
+  //  Обработка входа по magic-link (когда пользователь переходит по ссылке)
+  // -------------------------------------------------------------------
   useEffect(() => {
-    const url = window.location.href;
-    if (!isSignInWithEmailLink(auth, url)) {
-      return;
-    }
+    const trySignInWithEmailLink = async () => {
+      // если это не email-link для Firebase — выходим
+      if (!isSignInWithEmailLink(auth, window.location.href)) {
+        return;
+      }
 
-    setIsAuthLoading(true);
+      setIsAuthLoading(true);
+      setAuthError(null);
 
-    let storedEmail = window.localStorage.getItem(EMAIL_STORAGE_KEY) || "";
+      try {
+        // email стараемся взять из localStorage, иначе спрашиваем
+        let storedEmail = window.localStorage.getItem(EMAIL_STORAGE_KEY) ?? "";
 
-    if (!storedEmail) {
-      storedEmail = window.prompt("Введите email для входа") || "";
-    }
+        if (!storedEmail) {
+          storedEmail = window.prompt(
+            "Введите email, на который приходила ссылка для входа"
+          )?.trim() ?? "";
+        }
 
-    if (!storedEmail) {
-      setAuthError("Не указан email для входа.");
-      setIsAuthLoading(false);
-      return;
-    }
+        if (!storedEmail) {
+          throw new Error("Email не указан.");
+        }
 
-    signInWithEmailLink(auth, storedEmail, url)
-      .then(() => {
+        await signInWithEmailLink(auth, storedEmail, window.location.href);
+
+        // чистим URL от query-параметров Firebase
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.origin + window.location.pathname
+        );
+
         window.localStorage.removeItem(EMAIL_STORAGE_KEY);
-        setAuthError(null);
-      })
-      .catch((err) => {
-        console.error("Error signInWithEmailLink", err);
-        setAuthError("Не удалось войти по ссылке. Попробуйте ещё раз.");
-      })
-      .finally(() => {
+      } catch (err: any) {
+        console.error("Error signInWithEmailLink:", err);
+        setAuthError(
+          err?.message ?? "Не удалось войти по ссылке. Попробуйте ещё раз."
+        );
+      } finally {
         setIsAuthLoading(false);
-      });
+      }
+    };
+
+    void trySignInWithEmailLink();
   }, []);
 
-  // --- Отправка письма с ссылкой для входа ---
-  const handleSendLink = async (e: React.FormEvent) => {
+  // -------------------------------------------------------------------
+  //  Отправка magic-link на email
+  // -------------------------------------------------------------------
+  const handleSendLinkClick = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAuthError(null);
 
-    const trimmed = email.trim();
-    if (!trimmed) {
-      setAuthError("Введите email");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setAuthError("Введите email.");
       return;
     }
 
-    try {
-      setIsSendingLink(true);
+    setAuthError(null);
+    setIsSendingLink(true);
+    setLinkSent(false);
 
-      const actionCodeSettings = {
+    try {
+      await sendSignInLinkToEmail(auth, trimmedEmail, {
         url: window.location.origin,
         handleCodeInApp: true,
-      };
+      });
 
-      await sendSignInLinkToEmail(auth, trimmed, actionCodeSettings);
-      window.localStorage.setItem(EMAIL_STORAGE_KEY, trimmed);
-
+      window.localStorage.setItem(EMAIL_STORAGE_KEY, trimmedEmail);
       setLinkSent(true);
-    } catch (err) {
-      console.error("Error sendSignInLinkToEmail", err);
-      setAuthError("Не удалось отправить письмо. Проверьте email.");
+    } catch (err: any) {
+      console.error("Error sendSignInLinkToEmail:", err);
+      setAuthError(
+        err?.message ?? "Не удалось отправить письмо. Проверьте email."
+      );
     } finally {
       setIsSendingLink(false);
     }
   };
 
-  // --- Рендер состояний ---
+  // -------------------------------------------------------------------
+  //  Экраны
+  // -------------------------------------------------------------------
 
-  // 1) Пока не знаем, авторизован ли пользователь
+  // 1. Пока Firebase разбирается, кто мы такие
   if (isAuthLoading) {
     return (
-      <div className="app-root">
+      <div className="app-root app-auth-screen">
         <div className="auth-card">
-          <h1 className="auth-title">ORG MESSENGER</h1>
-          <div className="loading-text">Проверяем авторизацию…</div>
+          <div className="auth-title">ORG MESSENGER</div>
+          <div className="auth-subtitle">Загрузка пользователя…</div>
         </div>
       </div>
     );
   }
 
-  // 2) Пользователь уже авторизован — рисуем основное приложение
-  if (user) {
-    return <>{children(user)}</>;
+  // 2. Пользователь уже авторизован — даём ему весь мессенджер
+  if (firebaseUser) {
+    return <App firebaseUser={firebaseUser} />;
   }
 
-  // 3) Не авторизован — рисуем форму входа по почте
+  // 3. Экран входа по email-ссылке
   return (
-    <div className="app-root">
+    <div className="app-root app-auth-screen">
       <div className="auth-card">
-        <h1 className="auth-title">ORG MESSENGER</h1>
+        <div className="auth-title">ORG MESSENGER</div>
+        <div className="auth-subtitle">Вход по email</div>
 
-        <div className="auth-tabs">
-          <button className="auth-tab active">Вход по email</button>
-        </div>
-
-        <form className="auth-form" onSubmit={handleSendLink}>
-          <label className="auth-label">Email</label>
-          <input
-            className="auth-input"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@company.com"
-          />
+        <form className="auth-form" onSubmit={handleSendLinkClick}>
+          <label className="auth-label">
+            Email
+            <input
+              className="auth-input"
+              type="email"
+              placeholder="you@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
 
           {authError && <div className="auth-error">{authError}</div>}
+
           {linkSent && !authError && (
             <div className="auth-success">
-              Письмо с ссылкой для входа отправлено на {email}.
-              Откройте его и перейдите по ссылке.
+              Ссылка для входа отправлена на {email}. Откройте письмо и перейдите
+              по ссылке.
             </div>
           )}
 
           <button
             type="submit"
-            className="primary-button"
+            className="auth-button"
             disabled={isSendingLink}
           >
             {isSendingLink ? "Отправляем…" : "Отправить ссылку для входа"}
