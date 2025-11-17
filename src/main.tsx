@@ -1,11 +1,13 @@
-// src/main.tsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import EmailAuthGate from "./EmailAuthGate";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <EmailAuthGate>
+      {(user) => <App firebaseUser={user} />}
+    </EmailAuthGate>
   </React.StrictMode>
 );
