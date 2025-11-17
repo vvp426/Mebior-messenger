@@ -1,6 +1,7 @@
 // src/types.ts
 
-// Профиль пользователя
+// ---------- Профиль пользователя ----------
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -11,7 +12,8 @@ export interface UserProfile {
   createdAt?: any; // Firebase Timestamp
 }
 
-// Чат
+// ---------- Чаты ----------
+
 export interface Chat {
   id: string;
   title: string;
@@ -21,31 +23,45 @@ export interface Chat {
   messageCount?: number;
 }
 
-// Тип сообщения
+// ---------- Файлы сообщений ----------
+
+// Описание файла, прикреплённого к сообщению
+export type MessageFileInfo = {
+  id: string;           // id или путь в Storage
+  name: string;         // имя файла для пользователя
+  url: string;          // download URL
+  size: number;         // размер в байтах
+  contentType?: string | null;
+};
+
+// ---------- Сообщения ----------
+
 export type MessageKind = "text" | "file";
 
-// Сообщение
 export interface Message {
   id: string;
 
-  // какому чату принадлежит
+  // принадлежность чату
   chatId: string;
 
-  // тип: текст или файл
+  // тип сообщения
   kind: MessageKind;
 
-  // текст сообщения (если kind === "text")
+  // текст (если kind === "text")
   text?: string | null;
 
-  // служебное
-  createdAt: any; // Timestamp
+  // время создания
+  createdAt: any; // Firebase Timestamp
 
-  // данные пользователя, которые мы сейчас читаем в App.tsx
+  // данные автора (то, что мы используем в App.tsx)
   userId?: string;
   userName?: string | null;
   userAvatarUrl?: string | null;
 
-  // данные файла (если kind === "file")
+  // вложенный объект с информацией о файле
+  fileInfo?: MessageFileInfo | null;
+
+  // запасные поля, если где-то ещё используем прямые значения
   fileUrl?: string | null;
   fileName?: string | null;
   fileSize?: number | null;
