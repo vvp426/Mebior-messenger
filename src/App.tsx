@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import {
@@ -223,7 +222,6 @@ const App: React.FC = () => {
     if (!firebaseUser) return;
 
     const chatsCol = collection(db, "chats");
-    // тут orderBy по lastMessageAt норм — это одиночное поле
     const qChats = query(chatsCol);
 
     const unsub = onSnapshot(qChats, (snap) => {
@@ -239,7 +237,7 @@ const App: React.FC = () => {
         });
       });
 
-      // отсортируем по lastMessageAt на клиенте
+      // сортировка по lastMessageAt на клиенте
       list.sort((a, b) => {
         const ta =
           (a.lastMessageAt && a.lastMessageAt.toMillis?.()) || 0;
@@ -268,7 +266,6 @@ const App: React.FC = () => {
     }
 
     const messagesCol = collection(db, "messages");
-    // ВАЖНО: без orderBy, только where — индекс не нужен
     const qMessages = query(
       messagesCol,
       where("chatId", "==", activeChatId)
@@ -293,7 +290,6 @@ const App: React.FC = () => {
           });
         });
 
-        // сортировка по createdAt уже в JS
         list.sort((a, b) => {
           const ta =
             (a.createdAt && a.createdAt.toMillis?.()) || 0;
@@ -312,7 +308,7 @@ const App: React.FC = () => {
     return () => unsub();
   }, [firebaseUser, activeChatId]);
 
-  // ---------- Создание чата ----------
+  // ---------- Создание и удаление чатов ----------
 
   const handleCreateChat = async () => {
     const title = window.prompt("Название чата");
@@ -363,7 +359,7 @@ const App: React.FC = () => {
     }
   };
 
-  // ---------- Отправка сообщения ----------
+  // ---------- Отправка сообщений ----------
 
   const handleSendMessage = async () => {
     if (!firebaseUser || !activeChatId) return;
@@ -473,7 +469,7 @@ const App: React.FC = () => {
     }
   };
 
-  // ---------- Сохранение профиля ----------
+  // ---------- Профиль ----------
 
   const handleSaveProfile = async () => {
     if (!firebaseUser || !profile) return;
@@ -498,8 +494,6 @@ const App: React.FC = () => {
       alert("Не удалось сохранить профиль");
     }
   };
-
-  // ---------- Загрузка аватара ----------
 
   const handleAvatarChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -724,7 +718,7 @@ const App: React.FC = () => {
                       <div className="message-bubble">
                         {m.text && <div>{m.text}</div>}
                         {m.fileUrl && (
-                          <>
+                          <div className="message-attachment">
                             {isImage ? (
                               <a
                                 href={m.fileUrl}
@@ -747,7 +741,7 @@ const App: React.FC = () => {
                                 📎 {m.fileName || "Файл"}
                               </a>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                     </div>
