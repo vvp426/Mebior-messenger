@@ -1,33 +1,45 @@
-// src/types.ts
-import type { Timestamp } from "firebase/firestore";
+// Общие типы приложения
 
 export interface UserProfile {
+  uid: string;
   id: string;
-  email: string;
-  name?: string;
+email: string;
+  firstName: string;
+  lastName: string;
+  position: string;
+  department: string;
+  avatarUrl: string | null;
+  // Можно быстро получить отображаемое имя
+fullName?: string;
   position?: string;
   department?: string;
   avatarUrl?: string | null;
-  createdAt?: Timestamp;
+  createdAt?: Date | null;
 }
 
 export interface Chat {
-  id: string;
+id: string;
+  name: string;
   title: string;
-  createdAt?: Timestamp;
-  createdBy?: string;
-  lastMessageAt?: Timestamp;
-  messageCount?: number;
+createdAt: Date | null;
+  createdBy: string;
+  messagesCount?: number;
+  lastMessageAt?: Date | null;
 }
 
 export interface Message {
-  id: string;
+id: string;
+  chatId: string; // ← ключевое поле: к какому чату относится сообщение
   chatId: string;
-  text?: string;
-  createdAt?: Timestamp;
-  senderId: string;
-  senderEmail?: string;
-  senderName?: string;
-  fileUrl?: string | null;
-  fileName?: string | null;
-}
+text: string;
+createdAt: Date | null;
+userId: string;
+  userEmail: string;
+  userName?: string;
+  userEmail?: string | null;
+  userName?: string | null;
+userAvatarUrl?: string | null;
+
+attachmentUrl?: string | null;
+attachmentName?: string | null;
+attachmentType?: string | null;
