@@ -20,7 +20,6 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
-
 import { auth, db, storage } from "./firebase";
 import "./index.css";
 
@@ -56,12 +55,22 @@ type UserProfile = {
 };
 
 type AppProps = {
-  firebaseUser: FirebaseUser;
+  // делаем необязательным, чтобы TypeScript не падал, если где-то App вызван без пропа
+  firebaseUser?: FirebaseUser | null;
 };
 
-// ---------- компонент приложения ----------
+// ---------- основной компонент ----------
 
 const App: React.FC<AppProps> = ({ firebaseUser }) => {
+  // если по какой-то причине пользователя ещё нет – просто показываем «Загрузка…»
+  if (!firebaseUser) {
+    return (
+      <div className="app-root">
+        <div className="loading-text">Загрузка пользователя…</div>
+      </div>
+    );
+  }
+
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const [chats, setChats] = useState<Chat[]>([]);
@@ -71,10 +80,11 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
   const [newMessage, setNewMessage] = useState("");
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [profileDraft, setProfileDraft] = useState<{
     name: string;
     position: string;
@@ -86,69 +96,77 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
     [profile, firebaseUser]
   );
 
-  // ---------- загрузка профиля ----------
+  // ---------- загрузка/создание профиля ----------
 
   useEffect(() => {
-    const userDocRef = doc(db, "users", firebaseUser.uid);
+    let isCancelled = false;
 
     const loadProfile = async () => {
-      const snap = await getDoc(userDocRef);
+      setIsLoadingProfile(true);
+      try {
+        const userDocRef = doc(db, "users", firebaseUser.uid);
+        const snap = await getDoc(userDocRef);
 
-      if (snap.exists()) {
-        const data = snap.data() as any;
-        const loadedProfile: UserProfile = {
-          id: firebaseUser.uid,
-          email: firebaseUser.email || "",
-          name: data.name || "",
-          position: data.position || "",
-          department: data.department || "",
-          avatarUrl: data.avatarUrl,
-        };
-        setProfile(loadedProfile);
-        setProfileDraft({
-          name: loadedProfile.name,
-          position: loadedProfile.position,
-          department: loadedProfile.department,
-        });
-      } else {
-        const baseProfile: UserProfile = {
-          id: firebaseUser.uid,
-          email: firebaseUser.email || "",
-          name: firebaseUser.email || "",
-          position: "",
-          department: "",
-        };
+        if (!snap.exists()) {
+          const baseProfile: UserProfile = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            name: firebaseUser.displayName || "",
+            position: "",
+            department: "",
+          };
 
-        await setDoc(userDocRef, {
-          email: baseProfile.email,
-          name: baseProfile.name,
-          position: "",
-          department: "",
-          avatarUrl: null,
-          createdAt: serverTimestamp(),
-        });
+          await setDoc(userDocRef, {
+            email: baseProfile.email,
+            name: baseProfile.name,
+            position: "",
+            department: "",
+            avatarUrl: null,
+            createdAt: serverTimestamp(),
+          });
 
-        setProfile(baseProfile);
-        setProfileDraft({
-          name: baseProfile.name,
-          position: "",
-          department: "",
-        });
+          if (!isCancelled) {
+            setProfile(baseProfile);
+            setProfileDraft({
+              name: baseProfile.name,
+              position: "",
+              department: "",
+            });
+          }
+        } else {
+          const data = snap.data() as any;
+          const loadedProfile: UserProfile = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            name: data.name || "",
+            position: data.position || "",
+            department: data.department || "",
+            avatarUrl: data.avatarUrl || undefined,
+          };
+
+          if (!isCancelled) {
+            setProfile(loadedProfile);
+            setProfileDraft({
+              name: loadedProfile.name,
+              position: loadedProfile.position,
+              department: loadedProfile.department,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Profile load error", err);
+      } finally {
+        if (!isCancelled) setIsLoadingProfile(false);
       }
     };
 
-    loadProfile().catch((e) =>
-      console.error("Failed to load user profile", e)
-    );
+    loadProfile();
+    return () => {
+      isCancelled = true;
+    };
   }, [firebaseUser]);
 
-  // ---------- выход ----------
-
-  const handleSignOut = async () => {
-    await signOut(auth);
-  };
-
-  // ---------- подписка на список чатов ----------
+  // ---------- подписка на чаты ----------
 
   useEffect(() => {
     const chatsCol = collection(db, "chats");
@@ -168,6 +186,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       });
       setChats(list);
 
+      // если нет активного чата — выберем первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
@@ -175,7 +194,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
 
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChatId]);
+  }, []);
 
   // ---------- подписка на сообщения выбранного чата ----------
 
@@ -263,8 +282,9 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
 
       const chatDocRef = doc(db, "chats", activeChatId);
       const chatSnap = await getDoc(chatDocRef);
-      const currentCount =
-        (chatSnap.exists() && (chatSnap.data().messageCount as number)) || 0;
+      const currentCount = chatSnap.exists()
+        ? (chatSnap.data()?.messageCount as number) || 0
+        : 0;
 
       await updateDoc(chatDocRef, {
         lastMessageAt: serverTimestamp(),
@@ -311,8 +331,9 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
 
       const chatDocRef = doc(db, "chats", activeChatId);
       const snap = await getDoc(chatDocRef);
-      const currentCount =
-        (snap.exists() && (snap.data().messageCount as number)) || 0;
+      const currentCount = snap.exists()
+        ? (snap.data()?.messageCount as number) || 0
+        : 0;
 
       await updateDoc(chatDocRef, {
         lastMessageAt: serverTimestamp(),
@@ -354,7 +375,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
     }
   };
 
-  // ---------- загрузка аватара ----------
+  // ---------- аватар ----------
 
   const handleAvatarChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -381,13 +402,26 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
     }
   };
 
-  const activeChat = chats.find((c) => c.id === activeChatId) || null;
+  const handleSignOutClick = async () => {
+    await signOut(auth);
+  };
 
   // ---------- рендер ----------
+
+  if (isLoadingProfile || !profile) {
+    return (
+      <div className="app-root">
+        <div className="loading-text">Загрузка профиля…</div>
+      </div>
+    );
+  }
+
+  const activeChat = chats.find((c) => c.id === activeChatId) || null;
 
   return (
     <div className="app-root">
       <div className="chat-card">
+        {/* шапка */}
         <header className="chat-header">
           <div className="chat-header-left">
             <h1 className="chat-logo">ORG MESSENGER</h1>
@@ -397,11 +431,13 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
           </div>
           <div className="header-buttons">
             <button onClick={() => setIsProfileOpen(true)}>Профиль</button>
-            <button onClick={handleSignOut}>Выйти</button>
+            <button onClick={handleSignOutClick}>Выйти</button>
           </div>
         </header>
 
+        {/* layout */}
         <div className="chat-layout">
+          {/* список чатов */}
           <aside className="chat-sidebar">
             <div className="sidebar-header">
               <div className="sidebar-title">Чаты</div>
@@ -439,6 +475,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
             </div>
           </aside>
 
+          {/* активный чат */}
           <main className="chat-main">
             <div className="chat-main-header">
               <div className="chat-main-title">
@@ -497,6 +534,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
               )}
             </div>
 
+            {/* нижняя панель */}
             <div className="chat-input-row">
               <label className="file-button">
                 📎 Файл
@@ -526,6 +564,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
         </div>
       </div>
 
+      {/* модалка профиля */}
       {isProfileOpen && profile && (
         <div className="modal-backdrop" onClick={() => setIsProfileOpen(false)}>
           <div
