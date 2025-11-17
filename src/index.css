@@ -1,117 +1,153 @@
-* {
-  margin: 0;
-  padding: 0;
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html,
-body {
-  width: 100%;
-  height: 100%;
-  background: #020617;
-  font-family: -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
-  color: #e5e7eb;
-  overflow: hidden;
-}
-
+body,
 #root {
-  width: 100%;
+  margin: 0;
+  padding: 0;
   height: 100%;
+  width: 100%;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
 }
 
-/* ===== Корень ===== */
+body {
+  background: radial-gradient(circle at top, #1f2436 0, #050714 55%, #02020a 100%);
+  color: #f5f6ff;
+}
+
+/* Корневой контейнер */
 
 .app-root {
-  width: 100%;
-  height: 100%;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: 16px;
 }
 
-/* ===== Карточка приложения ===== */
+/* Карточка приложения */
+
+.chat-card,
+.auth-card {
+  background: linear-gradient(135deg, #0c1020, #12162b);
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  color: #f5f6ff;
+}
 
 .chat-card {
-  width: 100%;
-  max-width: 1100px;
-  height: 100%;
-  max-height: 720px;
-  background: radial-gradient(circle at top, #1e293b, #020617);
-  border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  width: 100%;
+  max-width: 1200px;
+  height: 90vh;
+  padding: 20px 24px;
 }
 
-/* ===== Лоадер / логин ===== */
+/* Загрузка */
 
-.auth-card,
 .loading-text {
-  background: rgba(15, 23, 42, 0.95);
-  border-radius: 24px;
+  color: #d0d4ff;
+}
+
+/* ---------- Авторизация ---------- */
+
+.auth-card {
   padding: 32px 40px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  min-width: 320px;
+  max-width: 420px;
   text-align: center;
 }
 
 .auth-title {
-  font-size: 26px;
-  font-weight: 700;
-  margin-bottom: 24px;
-  color: #e5e7eb;
+  margin: 0 0 24px;
+  font-size: 28px;
+  letter-spacing: 0.08em;
 }
 
-/* ===== Кнопки ===== */
+.auth-switch {
+  display: flex;
+  margin-bottom: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px;
+}
+
+.auth-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #a5b1ff;
+  padding: 8px 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.auth-tab-active {
+  background: #5865f2;
+  color: #fff;
+}
+
+.auth-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.auth-fields input {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 8px 10px;
+  background: rgba(4, 8, 24, 0.9);
+  color: #f5f6ff;
+}
+
+/* ---------- Кнопки ---------- */
 
 .primary-button,
 .secondary-button,
 .header-buttons button,
 .new-chat-button,
 .send-button,
-.file-button,
-.avatar-upload-button {
-  cursor: pointer;
-  border-radius: 14px;
+.file-button {
+  border-radius: 999px;
   border: none;
+  cursor: pointer;
   font-size: 14px;
 }
 
 .primary-button {
-  background: #4f46e5;
-  color: white;
   padding: 10px 20px;
+  background: #5865f2;
+  color: #fff;
+}
+
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .secondary-button {
+  padding: 8px 16px;
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  color: #e5e7eb;
-  padding: 9px 18px;
+  color: #d0d4ff;
+  border: 1px solid rgba(208, 212, 255, 0.4);
 }
 
-/* ===== Шапка ===== */
+/* ---------- Шапка чата ---------- */
 
 .chat-header {
-  padding: 16px 20px;
-  padding-top: calc(16px + env(safe-area-inset-top));
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.4);
-}
-
-.chat-logo {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.chat-subtitle {
-  font-size: 13px;
-  color: #9ca3af;
+  justify-content: space-between;
+  margin-bottom: 16px;
 }
 
 .chat-header-left {
@@ -120,36 +156,46 @@ body {
   gap: 4px;
 }
 
+.chat-logo {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.12em;
+}
+
+.chat-subtitle {
+  font-size: 13px;
+  color: #b2b9ff;
+}
+
 .header-buttons {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .header-buttons button {
-  padding: 7px 14px;
-  background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.7);
-  color: #e5e7eb;
+  padding: 8px 16px;
+  background: rgba(88, 101, 242, 0.1);
+  color: #e2e4ff;
 }
 
-/* ===== Layout ===== */
+/* ---------- Layout ---------- */
 
 .chat-layout {
   flex: 1;
-  min-height: 0;
   display: flex;
+  gap: 16px;
+  min-height: 0;
 }
 
-/* ===== Sidebar ===== */
+/* Sidebar */
 
 .chat-sidebar {
   width: 260px;
-  min-width: 220px;
-  border-right: 1px solid rgba(148, 163, 184, 0.4);
-  padding: 12px 14px;
+  background: rgba(6, 10, 30, 0.9);
+  border-radius: 18px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .sidebar-header {
@@ -160,71 +206,94 @@ body {
 }
 
 .sidebar-title {
-  font-size: 14px;
   font-weight: 600;
 }
 
 .new-chat-button {
-  padding: 6px 14px;
-  background: #4f46e5;
-  color: white;
-  border-radius: 999px;
+  padding: 6px 12px;
+  background: #5865f2;
+  color: #fff;
 }
 
 .chat-list {
   flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  margin-top: 4px;
+  padding-right: 4px;
 }
 
 .chat-item {
-  padding: 10px 12px;
+  background: rgba(16, 24, 60, 0.85);
   border-radius: 14px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid transparent;
+  padding: 10px 10px 8px;
+  margin-bottom: 8px;
   cursor: pointer;
-  transition: 0.15s;
+  transition: background 0.15s ease, transform 0.08s ease;
 }
 
 .chat-item:hover {
-  border-color: rgba(148, 163, 184, 0.7);
+  background: rgba(26, 36, 90, 0.95);
+  transform: translateY(-1px);
 }
 
 .chat-item-active {
-  background: #4f46e5;
-  border-color: #818cf8;
+  background: #5865f2;
+}
+
+.chat-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .chat-item-title {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.chat-delete-btn {
+  border: none;
+  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  font-size: 14px;
+  line-height: 14px;
+  padding: 0;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  cursor: pointer;
 }
 
 .chat-item-sub {
   font-size: 12px;
-  color: #9ca3af;
+  color: #d0d4ff;
+  margin-top: 4px;
 }
 
 .chat-empty {
-  margin-top: 10px;
+  margin-top: 16px;
   font-size: 13px;
-  color: #9ca3af;
+  color: #9aa2ff;
 }
 
-/* ===== Основной чат ===== */
+/* ---------- Основной чат ---------- */
 
 .chat-main {
   flex: 1;
-  padding: 14px 16px;
+  background: rgba(6, 10, 30, 0.95);
+  border-radius: 18px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 0;
 }
 
 .chat-main-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   margin-bottom: 8px;
 }
 
@@ -235,15 +304,15 @@ body {
 
 .chat-main-subtitle {
   font-size: 13px;
-  color: #9ca3af;
+  color: #c0c6ff;
 }
 
-/* ===== Сообщения ===== */
+/* Список сообщений */
 
 .messages-area {
   flex: 1;
-  min-height: 0;
   overflow-y: auto;
+  margin-top: 8px;
   padding-right: 6px;
   display: flex;
   flex-direction: column;
@@ -251,15 +320,17 @@ body {
 }
 
 .messages-empty {
-  margin-top: 16px;
-  font-size: 13px;
-  color: #9ca3af;
+  margin-top: 24px;
+  font-size: 14px;
+  color: #9aa2ff;
 }
+
+/* Сообщение */
 
 .message-row {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
-  align-items: flex-end;
 }
 
 .message-row-mine {
@@ -269,9 +340,14 @@ body {
 .message-avatar {
   width: 32px;
   height: 32px;
-  border-radius: 999px;
+  border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
+  background: #25284a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
 }
 
 .message-avatar img {
@@ -281,77 +357,96 @@ body {
 }
 
 .avatar-placeholder {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: #4f46e5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
+  color: #c7cbff;
 }
 
 .message-bubble-wrapper {
-  max-width: 75%;
+  max-width: 70%;
 }
 
 .message-meta {
-  font-size: 11px;
-  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #b9c1ff;
   margin-bottom: 2px;
 }
 
 .message-author {
-  font-weight: 500;
+  font-weight: 600;
+  cursor: pointer;
 }
+
+.msg-delete-btn {
+  border: none;
+  background: transparent;
+  color: #f5f6ff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Пузырь сообщения */
 
 .message-bubble {
-  background: #4f46e5;
-  border-radius: 18px;
+  background: #5865f2;
+  color: #fff;
+  border-radius: 999px;
   padding: 8px 12px;
   font-size: 14px;
-  color: white;
-  word-break: break-word;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
-.message-row:not(.message-row-mine) .message-bubble {
-  background: rgba(15, 23, 42, 0.9);
+/* Вложение */
+
+.message-attachment {
+  width: 100%;
 }
+
+.message-image-thumb {
+  display: block;
+  max-width: 220px;
+  max-height: 160px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Чип обычного файла */
 
 .file-chip {
-  display: inline-block;
-  margin-top: 4px;
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
   border-radius: 999px;
-  border: 1px dashed rgba(209, 213, 219, 0.9);
-  font-size: 12px;
-  color: #e5e7eb;
+  background: rgba(4, 8, 24, 0.45);
+  color: #f5f6ff;
+  font-size: 13px;
   text-decoration: none;
 }
 
-/* ===== Нижняя панель ввода ===== */
+/* ---------- Нижняя панель ввода ---------- */
 
 .chat-input-row {
+  margin-top: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 0 12px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(148, 163, 184, 0.4);
-  margin-top: 4px;
 }
 
 .file-button {
   position: relative;
   padding: 8px 16px;
-  background: transparent;
-  border-radius: 999px;
-  border: 1px dashed rgba(148, 163, 184, 0.8);
-  color: #e5e7eb;
-  font-size: 13px;
+  background: rgba(7, 12, 40, 0.95);
+  color: #f5f6ff;
+  border: 1px dashed rgba(208, 212, 255, 0.5);
 }
 
-.file-button input {
+.file-button input[type="file"] {
   position: absolute;
   inset: 0;
   opacity: 0;
@@ -360,50 +455,53 @@ body {
 
 .chat-input {
   flex: 1;
-  padding: 9px 12px;
-  border-radius: 12px;
-  border: none;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 8px 14px;
+  background: rgba(4, 8, 24, 0.9);
+  color: #f5f6ff;
+}
+
+.chat-input:focus {
   outline: none;
-  background: rgba(15, 23, 42, 0.9);
-  color: #e5e7eb;
+  border-color: #7b86ff;
 }
 
 .send-button {
   padding: 8px 18px;
-  background: #4f46e5;
-  color: white;
+  background: #5865f2;
+  color: #fff;
 }
 
-/* ===== Модалка профиля ===== */
+/* ---------- Модалка профиля ---------- */
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.7);
+  background: rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 10;
 }
 
 .modal-card {
-  width: 100%;
-  max-width: 520px;
-  background: #020617;
-  border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  padding: 20px 22px 18px;
+  background: linear-gradient(135deg, #0d111f, #151a30);
+  border-radius: 22px;
+  padding: 22px 26px;
+  width: 90%;
+  max-width: 640px;
 }
 
 .modal-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 14px;
+  margin-top: 0;
+  margin-bottom: 16px;
 }
 
 .profile-row {
   display: flex;
   gap: 18px;
+  align-items: flex-start;
 }
 
 .profile-avatar-block {
@@ -415,26 +513,33 @@ body {
 
 .profile-avatar-img,
 .profile-avatar-placeholder {
-  width: 72px;
-  height: 72px;
-  border-radius: 999px;
-  object-fit: cover;
-  background: #4f46e5;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #25284a;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+  font-size: 32px;
+  color: #d0d4ff;
+}
+
+.profile-avatar-img {
+  object-fit: cover;
 }
 
 .avatar-upload-button {
   position: relative;
+  border-radius: 999px;
   padding: 6px 14px;
-  font-size: 12px;
-  background: #4f46e5;
+  background: #5865f2;
   color: white;
+  font-size: 13px;
+  cursor: pointer;
 }
 
-.avatar-upload-button input {
+.avatar-upload-button input[type="file"] {
   position: absolute;
   inset: 0;
   opacity: 0;
@@ -445,39 +550,37 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .profile-field label {
+  display: block;
   font-size: 12px;
-  color: #9ca3af;
+  margin-bottom: 3px;
+  color: #c0c6ff;
 }
 
 .profile-field input {
   width: 100%;
-  margin-top: 2px;
-  padding: 6px 8px;
   border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.7);
-  background: transparent;
-  color: #e5e7eb;
-  font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 6px 10px;
+  background: rgba(4, 8, 24, 0.9);
+  color: #f5f6ff;
 }
 
 .modal-footer {
-  margin-top: 14px;
+  margin-top: 18px;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* ===== Адаптив ===== */
+/* ---------- Адаптив ---------- */
 
 @media (max-width: 900px) {
   .chat-card {
-    max-height: none;
-    height: 100%;
-    border-radius: 0;
+    height: auto;
   }
 
   .chat-layout {
@@ -486,24 +589,32 @@ body {
 
   .chat-sidebar {
     width: 100%;
-    min-width: unset;
-    border-right: none;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+    flex-direction: column;
+  }
+
+  .chat-main {
+    min-height: 60vh;
+  }
+
+  .message-bubble-wrapper {
+    max-width: 80%;
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 600px) {
+  .chat-card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
   .chat-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
 
-  .chat-card {
-    border-radius: 0;
-  }
-
-  .profile-row {
-    flex-direction: column;
+  .header-buttons {
+    align-self: stretch;
+    justify-content: flex-end;
   }
 }
