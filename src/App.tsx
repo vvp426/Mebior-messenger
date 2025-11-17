@@ -1,95 +1,59 @@
 // src/App.tsx
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import { signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import {
   getDownloadURL,
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
+
 import { auth, db, storage } from "./firebase";
-import "./index.css";
+import type { Chat, Message, UserProfile } from "./types";
+import "./App.css";
 
-// ---------- Типы ----------
-
-type Chat = {
-  id: string;
-  title: string;
-  createdAt?: any;
-  lastMessageAt?: any;
-  messageCount?: number;
-};
-
-type Message = {
-  id: string;
-  chatId: string;
-  text: string;
-  createdAt?: any;
-  userId: string;
-  userName: string;
-  userAvatarUrl?: string;
-  fileName?: string;
-  fileUrl?: string;
-};
-
-type UserProfile = {
-  id: string;
-  email: string;
-  name: string;
-  position: string;
-  department: string;
-  avatarUrl?: string | null;
-};
+// ---------- Пропсы ----------
 
 type AppProps = {
   firebaseUser: FirebaseUser;
 };
 
-// ---------- Компонент приложения ----------
+// ---------- Компонент ----------
 
 const App: React.FC<AppProps> = ({ firebaseUser }) => {
-  // профиль
   const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  // ключевая штука: сообщения лежат по chatId
+  const [messagesByChat, setMessagesByChat] = useState<
+    Record<string, Message[]>
+  >({});
+  const [newMessage, setNewMessage] = useState("");
+
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
   const [profileDraft, setProfileDraft] = useState<{
     name: string;
     position: string;
     department: string;
   }>({ name: "", position: "", department: "" });
-
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-
-  // чаты / сообщения
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [isSending, setIsSending] = useState(false);
-  const [isCreatingChat, setIsCreatingChat] = useState(false);
-
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
-
-  // авто-скролл вниз
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const userDisplayName = useMemo(
     () => profile?.name || firebaseUser.email || "",
@@ -99,85 +63,61 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
   // ---------- Загрузка / создание профиля ----------
 
   useEffect(() => {
-    let isCancelled = false;
-
     const loadProfile = async () => {
-      setIsLoadingProfile(true);
-      try {
-        const userDocRef = doc(db, "users", firebaseUser.uid);
-        const snap = await getDoc(userDocRef);
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+      const snap = await getDoc(userDocRef);
 
-        if (!snap.exists()) {
-          // создаём базовый профиль
-          const baseProfile: UserProfile = {
-            id: firebaseUser.uid,
-            email: firebaseUser.email || "",
-            name: firebaseUser.displayName || "",
-            position: "",
-            department: "",
-            avatarUrl: null,
-          };
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        const loaded: UserProfile = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || "",
+          name: data.name || "",
+          position: data.position || "",
+          department: data.department || "",
+          avatarUrl: data.avatarUrl || undefined,
+        };
+        setProfile(loaded);
+        setProfileDraft({
+          name: loaded.name,
+          position: loaded.position,
+          department: loaded.department,
+        });
+      } else {
+        const base: UserProfile = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || "",
+          name: firebaseUser.email || "",
+          position: "",
+          department: "",
+        };
 
-          await setDoc(userDocRef, {
-            email: baseProfile.email,
-            name: baseProfile.name,
-            position: "",
-            department: "",
-            avatarUrl: null,
-            createdAt: serverTimestamp(),
-          });
+        await setDoc(userDocRef, {
+          email: base.email,
+          name: base.name,
+          position: "",
+          department: "",
+          avatarUrl: null,
+          createdAt: serverTimestamp(),
+        });
 
-          if (!isCancelled) {
-            setProfile(baseProfile);
-            setProfileDraft({
-              name: baseProfile.name,
-              position: "",
-              department: "",
-            });
-          }
-        } else {
-          const data = snap.data() as any;
-          const loaded: UserProfile = {
-            id: firebaseUser.uid,
-            email: data.email || firebaseUser.email || "",
-            name: data.name || "",
-            position: data.position || "",
-            department: data.department || "",
-            avatarUrl: data.avatarUrl ?? null,
-          };
-
-          if (!isCancelled) {
-            setProfile(loaded);
-            setProfileDraft({
-              name: loaded.name,
-              position: loaded.position,
-              department: loaded.department,
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Ошибка загрузки профиля", err);
-        if (!isCancelled) {
-          setProfile(null);
-        }
-      } finally {
-        if (!isCancelled) setIsLoadingProfile(false);
+        setProfile(base);
+        setProfileDraft({
+          name: base.name,
+          position: "",
+          department: "",
+        });
       }
     };
 
-    loadProfile();
-
-    return () => {
-      isCancelled = true;
-    };
+    loadProfile().catch((e) => console.error("Profile load error", e));
   }, [firebaseUser]);
 
-  // ---------- Подписка на чаты ----------
+  // ---------- Подписка на список чатов ----------
 
   useEffect(() => {
     const chatsCol = collection(db, "chats");
-    // сортировку по lastMessageAt оставляем – она не требует индекса
-    const q = query(chatsCol);
+    const q = query(chatsCol, orderBy("lastMessageAt", "desc"));
 
     const unsub = onSnapshot(q, (snap) => {
       const list: Chat[] = [];
@@ -192,83 +132,67 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
         });
       });
 
-      // можно отсортировать по lastMessageAt на клиенте
-      list.sort((a, b) => {
-        const aTs = a.lastMessageAt?.seconds ?? 0;
-        const bTs = b.lastMessageAt?.seconds ?? 0;
-        return bTs - aTs;
-      });
-
       setChats(list);
 
-      // если нет активного чата — берём первый
+      // если чат ещё не выбран — выбираем первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
     });
 
     return () => unsub();
+    // activeChatId намеренно не в зависимостях
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [firebaseUser]);
 
-  // ---------- Подписка на сообщения выбранного чата ----------
+  // ---------- Подписка на ВСЕ сообщения, группировка по chatId ----------
 
   useEffect(() => {
-    if (!activeChatId) {
-      setMessages([]);
-      return;
-    }
-
     const messagesCol = collection(db, "messages");
-    // ВАЖНО: фильтруем по chatId, НО не используем orderBy,
-    // чтобы не требовалась композитная индексация.
-    const q = query(messagesCol, where("chatId", "==", activeChatId));
+    const q = query(messagesCol, orderBy("createdAt", "asc"));
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list: Message[] = [];
-        snap.forEach((d) => {
-          const data = d.data() as any;
-          list.push({
-            id: d.id,
-            chatId: data.chatId,
-            text: data.text,
-            createdAt: data.createdAt,
-            userId: data.userId,
-            userName: data.userName,
-            userAvatarUrl: data.userAvatarUrl,
-            fileName: data.fileName,
-            fileUrl: data.fileUrl,
-          });
-        });
+    const unsub = onSnapshot(q, (snap) => {
+      const byChat: Record<string, Message[]> = {};
 
-        // сортируем сообщения по времени на клиенте
-        list.sort((a, b) => {
-          const aTs = a.createdAt?.seconds ?? 0;
-          const bTs = b.createdAt?.seconds ?? 0;
-          return aTs - bTs;
-        });
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const m: Message = {
+          id: d.id,
+          chatId: data.chatId,
+          text: data.text,
+          createdAt: data.createdAt,
+          userId: data.userId,
+          userName: data.userName,
+          userAvatarUrl: data.userAvatarUrl,
+          fileName: data.fileName,
+          fileUrl: data.fileUrl,
+        };
 
-        setMessages(list);
+        if (!m.chatId) return; // защитимся от старых кривых данных
 
-        // после обновления – скролл вниз
-        if (messagesEndRef.current) {
-          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        if (!byChat[m.chatId]) {
+          byChat[m.chatId] = [];
         }
-      },
-      (err) => {
-        console.error("Ошибка подписки на сообщения", err);
-        setMessages([]);
-      }
-    );
+        byChat[m.chatId].push(m);
+      });
+
+      setMessagesByChat(byChat);
+    });
 
     return () => unsub();
-  }, [activeChatId]);
+  }, [firebaseUser]);
+
+  // сообщения активного чата
+  const activeMessages: Message[] =
+    (activeChatId && messagesByChat[activeChatId]) || [];
 
   const activeChat = chats.find((c) => c.id === activeChatId) || null;
 
-  // ---------- Создание чата ----------
+  // ---------- Обработчики ----------
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+  };
 
   const handleCreateChat = async () => {
     const title = window.prompt("Название чата");
@@ -281,7 +205,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       const chatDoc = await addDoc(chatsCol, {
         title,
         createdAt: serverTimestamp(),
-        lastMessageAt: null,
+        lastMessageAt: serverTimestamp(),
         createdBy: firebaseUser.uid,
         messageCount: 0,
       });
@@ -294,43 +218,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       setIsCreatingChat(false);
     }
   };
-
-  // ---------- Удаление чата ----------
-
-  const handleDeleteChat = async (chatId: string) => {
-    if (!window.confirm("Удалить этот чат вместе с сообщениями?")) return;
-
-    try {
-      await deleteDoc(doc(db, "chats", chatId));
-
-      // чистим сообщения этого чата
-      const messagesCol = collection(db, "messages");
-      const q = query(messagesCol, where("chatId", "==", chatId));
-      const snap = await new Promise<Parameters<Parameters<typeof onSnapshot>[1]>[0]>((resolve, reject) => {
-        onSnapshot(
-          q,
-          (s) => resolve(s),
-          (err) => reject(err)
-        );
-      });
-
-      const deletions: Promise<void>[] = [];
-      snap.forEach((d) => {
-        deletions.push(deleteDoc(doc(db, "messages", d.id)));
-      });
-      await Promise.all(deletions);
-
-      if (activeChatId === chatId) {
-        setActiveChatId(null);
-        setMessages([]);
-      }
-    } catch (err) {
-      console.error("Ошибка удаления чата", err);
-      alert("Не удалось удалить чат");
-    }
-  };
-
-  // ---------- Отправка сообщения ----------
 
   const handleSendMessage = async () => {
     if (!activeChatId) return;
@@ -346,11 +233,10 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
         text: trimmed,
         createdAt: serverTimestamp(),
         userId: firebaseUser.uid,
-        userName: userDisplayName || firebaseUser.email || "Без имени",
+        userName: profile?.name || firebaseUser.email || "Без имени",
         userAvatarUrl: profile?.avatarUrl || null,
       });
 
-      // обновляем метаданные чата
       const chatDocRef = doc(db, "chats", activeChatId);
       const chatSnap = await getDoc(chatDocRef);
       const currentCount = chatSnap.exists()
@@ -370,8 +256,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       setIsSending(false);
     }
   };
-
-  // ---------- Отправка файла ----------
 
   const handleFileChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -396,14 +280,14 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
         fileUrl: url,
         createdAt: serverTimestamp(),
         userId: firebaseUser.uid,
-        userName: userDisplayName || firebaseUser.email || "Без имени",
+        userName: profile?.name || firebaseUser.email || "Без имени",
         userAvatarUrl: profile?.avatarUrl || null,
       });
 
       const chatDocRef = doc(db, "chats", activeChatId);
-      const chatSnap = await getDoc(chatDocRef);
-      const currentCount = chatSnap.exists()
-        ? ((chatSnap.data()?.messageCount as number) || 0)
+      const snap = await getDoc(chatDocRef);
+      const currentCount = snap.exists()
+        ? ((snap.data()?.messageCount as number) || 0)
         : 0;
 
       await updateDoc(chatDocRef, {
@@ -419,8 +303,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       setIsSending(false);
     }
   };
-
-  // ---------- Сохранение профиля ----------
 
   const handleSaveProfile = async () => {
     if (!profile) return;
@@ -445,8 +327,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       alert("Не удалось сохранить профиль");
     }
   };
-
-  // ---------- Загрузка аватара ----------
 
   const handleAvatarChange = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -473,21 +353,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
     }
   };
 
-  // ---------- Выход ----------
-
-  const handleSignOut = async () => {
-    await signOut(auth);
-  };
-
   // ---------- Рендер ----------
-
-  if (isLoadingProfile || !profile) {
-    return (
-      <div className="app-root">
-        <div className="loading-text">Загрузка пользователя…</div>
-      </div>
-    );
-  }
 
   return (
     <div className="app-root">
@@ -497,7 +363,8 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
           <div className="chat-header-left">
             <h1 className="chat-logo">ORG MESSENGER</h1>
             <div className="chat-subtitle">
-              Вы вошли как: {userDisplayName} ({firebaseUser.email})
+              Вы вошли как: {userDisplayName}
+              {firebaseUser.email && ` (${firebaseUser.email})`}
             </div>
           </div>
           <div className="header-buttons">
@@ -508,7 +375,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
 
         {/* Основной layout */}
         <div className="chat-layout">
-          {/* Сайдбар чатов */}
+          {/* Список чатов */}
           <aside className="chat-sidebar">
             <div className="sidebar-header">
               <div className="sidebar-title">Чаты</div>
@@ -531,20 +398,9 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
                   }
                   onClick={() => setActiveChatId(chat.id)}
                 >
-                  <div className="chat-item-title">
-                    {chat.title}
-                    <button
-                      className="chat-delete-button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteChat(chat.id);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
+                  <div className="chat-item-title">{chat.title}</div>
                   <div className="chat-item-sub">
-                    Сообщений: {chat.messageCount ?? 0}
+                    Сообщений: {chat.messageCount || 0}
                   </div>
                 </div>
               ))}
@@ -557,49 +413,66 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
             </div>
           </aside>
 
-          {/* Основной чат */}
+          {/* Текущий чат */}
           <main className="chat-main">
             <div className="chat-main-header">
               <div className="chat-main-title">
                 {activeChat?.title || "Чат не выбран"}
               </div>
               <div className="chat-main-subtitle">
-                Сообщений: {messages.length}
+                Сообщений: {activeMessages.length}
               </div>
             </div>
 
             <div className="messages-area">
-              {messages.map((m) => (
-                <div key={m.id} className="message-row">
-                  <div className="message-bubble-wrapper">
-                    <div className="message-meta">
-                      <span className="message-author">{m.userName}</span>
-                    </div>
-                    <div className="message-bubble">
-                      {m.text && <div>{m.text}</div>}
-                      {m.fileUrl && (
-                        <a
-                          href={m.fileUrl}
-                          className="file-chip"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          📎 {m.fileName || "Файл"}
-                        </a>
-                      )}
+              {activeMessages.map((m) => {
+                const isMine = m.userId === firebaseUser.uid;
+                return (
+                  <div
+                    key={m.id}
+                    className={
+                      "message-row" + (isMine ? " message-row-mine" : "")
+                    }
+                  >
+                    {!isMine && (
+                      <div className="message-avatar">
+                        {m.userAvatarUrl ? (
+                          <img src={m.userAvatarUrl} alt={m.userName} />
+                        ) : (
+                          <div className="avatar-placeholder">
+                            {m.userName?.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="message-bubble-wrapper">
+                      <div className="message-meta">
+                        <span className="message-author">{m.userName}</span>
+                      </div>
+                      <div className="message-bubble">
+                        {m.text && <div>{m.text}</div>}
+                        {m.fileUrl && (
+                          <a
+                            href={m.fileUrl}
+                            className="file-chip"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            📎 {m.fileName || "Файл"}
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
-              {messages.length === 0 && (
+              {activeMessages.length === 0 && (
                 <div className="messages-empty">Сообщений пока нет</div>
               )}
-
-              <div ref={messagesEndRef} />
             </div>
 
-            {/* Нижняя панель ввода */}
+            {/* Ввод сообщения */}
             <div className="chat-input-row">
               <label className="file-button">
                 📎 Файл
@@ -669,7 +542,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
                 </div>
 
                 <div className="profile-field">
-                  <label>Имя / ФИО</label>
+                  <label>Имя</label>
                   <input
                     value={profileDraft.name}
                     onChange={(e) =>
