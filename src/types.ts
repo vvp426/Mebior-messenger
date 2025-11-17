@@ -1,42 +1,33 @@
 // src/types.ts
+import type { Timestamp } from "firebase/firestore";
 
 export interface UserProfile {
   id: string;
   email: string;
-
-  // всё, что реально есть в Firestore, либо может появиться
   name?: string;
   position?: string;
   department?: string;
   avatarUrl?: string | null;
+  createdAt?: Timestamp;
 }
 
 export interface Chat {
   id: string;
   title: string;
-
-  createdAt?: any;
-  lastMessageAt?: any;
-
-  // мы его храним в документе чата, но в интерфейсе делаем опциональным
+  createdAt?: Timestamp;
+  createdBy?: string;
+  lastMessageAt?: Timestamp;
   messageCount?: number;
 }
 
 export interface Message {
   id: string;
-
   chatId: string;
-  userId: string;
-  userName: string;
-
   text?: string;
-
-  createdAt?: any;
-
-  // файл может быть, а может и нет
-  fileName?: string | null;
+  createdAt?: Timestamp;
+  senderId: string;
+  senderEmail?: string;
+  senderName?: string;
   fileUrl?: string | null;
-
-  // на будущее — если будешь показывать аватар
-  userAvatarUrl?: string | null;
+  fileName?: string | null;
 }
