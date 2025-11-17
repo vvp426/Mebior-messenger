@@ -1,28 +1,42 @@
+// src/types.ts
+
 export interface UserProfile {
   id: string;
   email: string;
+
+  // всё, что реально есть в Firestore, либо может появиться
   name?: string;
-  avatarUrl?: string | null;
-  department?: string;
   position?: string;
-}
-
-export interface Message {
-  id: string;
-  uid: string;
-  text?: string;
-
-  createdAt: any;
-
-  // файлов у тебя НЕТ — делаем опциональными
-  fileUrl?: string | null;
-  fileName?: string | null;
+  department?: string;
+  avatarUrl?: string | null;
 }
 
 export interface Chat {
   id: string;
   title: string;
-  createdAt: any;
+
+  createdAt?: any;
   lastMessageAt?: any;
-  messageCount: number;
+
+  // мы его храним в документе чата, но в интерфейсе делаем опциональным
+  messageCount?: number;
+}
+
+export interface Message {
+  id: string;
+
+  chatId: string;
+  userId: string;
+  userName: string;
+
+  text?: string;
+
+  createdAt?: any;
+
+  // файл может быть, а может и нет
+  fileName?: string | null;
+  fileUrl?: string | null;
+
+  // на будущее — если будешь показывать аватар
+  userAvatarUrl?: string | null;
 }
