@@ -1,45 +1,61 @@
-// Общие типы приложения
+// src/types.ts
 
+import type { Timestamp } from "firebase/firestore";
+
+// Профиль пользователя в коллекции users
 export interface UserProfile {
-  uid: string;
   id: string;
-email: string;
-  firstName: string;
-  lastName: string;
-  position: string;
-  department: string;
-  avatarUrl: string | null;
-  // Можно быстро получить отображаемое имя
-fullName?: string;
-  position?: string;
-  department?: string;
+  email: string;
+  name?: string;
   avatarUrl?: string | null;
-  createdAt?: Date | null;
+  department?: string;
+  position?: string;
+  createdAt?: Timestamp;
 }
 
+// Документ чата в коллекции chats
 export interface Chat {
-id: string;
-  name: string;
+  id: string;
   title: string;
-createdAt: Date | null;
-  createdBy: string;
-  messagesCount?: number;
-  lastMessageAt?: Date | null;
+  createdAt?: Timestamp;
+  createdBy?: string;
+  messageCount?: number;
+  lastMessageAt?: Timestamp | null;
 }
 
-export interface Message {
-id: string;
-  chatId: string; // ← ключевое поле: к какому чату относится сообщение
-  chatId: string;
-text: string;
-createdAt: Date | null;
-userId: string;
-  userEmail: string;
-  userName?: string;
-  userEmail?: string | null;
-  userName?: string | null;
-userAvatarUrl?: string | null;
+// Тип содержимого сообщения
+export type MessageKind = "text" | "file";
 
-attachmentUrl?: string | null;
-attachmentName?: string | null;
-attachmentType?: string | null;
+// Инфо о прикреплённом файле
+export interface MessageFileInfo {
+  url: string;
+  name: string;
+  size?: number;
+  contentType?: string;
+}
+
+// Документ сообщения в коллекции messages
+export interface Message {
+  id: string;
+
+  // id чата, к которому относится сообщение
+  chatId: string;
+
+  // uid пользователя из Firebase Auth
+  userId: string;
+
+  // Доп. данные пользователя (чтоб не ходить за ними отдельно)
+  userName?: string;
+  userAvatarUrl?: string | null;
+
+  // Тип сообщения
+  kind: MessageKind;
+
+  // Текст (для kind === "text")
+  text?: string;
+
+  // Файл (для kind === "file")
+  fileInfo?: MessageFileInfo | null;
+
+  createdAt?: Timestamp;
+}
