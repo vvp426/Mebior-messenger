@@ -1,61 +1,53 @@
 // src/types.ts
 
-import type { Timestamp } from "firebase/firestore";
-
-// Профиль пользователя в коллекции users
+// Профиль пользователя
 export interface UserProfile {
   id: string;
   email: string;
-  name?: string;
+  name?: string | null;
   avatarUrl?: string | null;
-  department?: string;
-  position?: string;
-  createdAt?: Timestamp;
+  department?: string | null;
+  position?: string | null;
+  createdAt?: any; // Firebase Timestamp
 }
 
-// Документ чата в коллекции chats
+// Чат
 export interface Chat {
   id: string;
   title: string;
-  createdAt?: Timestamp;
-  createdBy?: string;
+  createdAt?: any;          // Timestamp
+  createdBy?: string | null;
+  lastMessageAt?: any | null;
   messageCount?: number;
-  lastMessageAt?: Timestamp | null;
 }
 
-// Тип содержимого сообщения
+// Тип сообщения
 export type MessageKind = "text" | "file";
 
-// Инфо о прикреплённом файле
-export interface MessageFileInfo {
-  url: string;
-  name: string;
-  size?: number;
-  contentType?: string;
-}
-
-// Документ сообщения в коллекции messages
+// Сообщение
 export interface Message {
   id: string;
 
-  // id чата, к которому относится сообщение
+  // какому чату принадлежит
   chatId: string;
 
-  // uid пользователя из Firebase Auth
-  userId: string;
-
-  // Доп. данные пользователя (чтоб не ходить за ними отдельно)
-  userName?: string;
-  userAvatarUrl?: string | null;
-
-  // Тип сообщения
+  // тип: текст или файл
   kind: MessageKind;
 
-  // Текст (для kind === "text")
-  text?: string;
+  // текст сообщения (если kind === "text")
+  text?: string | null;
 
-  // Файл (для kind === "file")
-  fileInfo?: MessageFileInfo | null;
+  // служебное
+  createdAt: any; // Timestamp
 
-  createdAt?: Timestamp;
+  // данные пользователя, которые мы сейчас читаем в App.tsx
+  userId?: string;
+  userName?: string | null;
+  userAvatarUrl?: string | null;
+
+  // данные файла (если kind === "file")
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileSize?: number | null;
+  fileContentType?: string | null;
 }
