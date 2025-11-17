@@ -20,6 +20,7 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
+
 import { auth, db, storage } from "./firebase";
 import "./index.css";
 
@@ -167,7 +168,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       });
       setChats(list);
 
-      // если чат не выбран — берём первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
@@ -186,8 +186,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
     }
 
     const messagesCol = collection(db, "messages");
-
-    // ВАЖНО: фильтруем по chatId, чтобы у каждого чата был свой список сообщений
     const q = query(
       messagesCol,
       where("chatId", "==", activeChatId),
@@ -254,8 +252,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
       setIsSending(true);
 
       const messagesCol = collection(db, "messages");
-
-      // каждое сообщение — новый документ
       await addDoc(messagesCol, {
         chatId: activeChatId,
         text: trimmed,
@@ -265,7 +261,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
         userAvatarUrl: profile?.avatarUrl || null,
       });
 
-      // обновляем данные чата
       const chatDocRef = doc(db, "chats", activeChatId);
       const chatSnap = await getDoc(chatDocRef);
       const currentCount =
@@ -393,7 +388,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
   return (
     <div className="app-root">
       <div className="chat-card">
-        {/* шапка */}
         <header className="chat-header">
           <div className="chat-header-left">
             <h1 className="chat-logo">ORG MESSENGER</h1>
@@ -407,9 +401,7 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
           </div>
         </header>
 
-        {/* layout */}
         <div className="chat-layout">
-          {/* сайдбар чатов */}
           <aside className="chat-sidebar">
             <div className="sidebar-header">
               <div className="sidebar-title">Чаты</div>
@@ -447,7 +439,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
             </div>
           </aside>
 
-          {/* основной чат */}
           <main className="chat-main">
             <div className="chat-main-header">
               <div className="chat-main-title">
@@ -506,7 +497,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
               )}
             </div>
 
-            {/* нижняя панель ввода */}
             <div className="chat-input-row">
               <label className="file-button">
                 📎 Файл
@@ -536,7 +526,6 @@ const App: React.FC<AppProps> = ({ firebaseUser }) => {
         </div>
       </div>
 
-      {/* модалка профиля */}
       {isProfileOpen && profile && (
         <div className="modal-backdrop" onClick={() => setIsProfileOpen(false)}>
           <div
