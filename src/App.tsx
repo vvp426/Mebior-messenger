@@ -1,12 +1,7 @@
+// src/App.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
-import {
-  onAuthStateChanged,
-  sendSignInLinkToEmail,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
-  signOut,
-} from "firebase/auth";
+import { signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -19,7 +14,6 @@ import {
   setDoc,
   updateDoc,
   where,
-  deleteDoc,
 } from "firebase/firestore";
 import {
   getDownloadURL,
@@ -29,7 +23,7 @@ import {
 import { auth, db, storage } from "./firebase";
 import "./index.css";
 
-// ---------- Типы ----------
+// ---------- типы ----------
 
 type Chat = {
   id: string;
@@ -60,22 +54,13 @@ type UserProfile = {
   avatarUrl?: string;
 };
 
-// ---------- Константа для хранения email в localStorage ----------
+type AppProps = {
+  firebaseUser: FirebaseUser;
+};
 
-const EMAIL_STORAGE_KEY = "org-messenger-emailForSignIn";
+// ---------- компонент приложения ----------
 
-// ---------- Компонент приложения ----------
-
-const App: React.FC = () => {
-  // ——— состояние авторизации по email-ссылке ———
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [email, setEmail] = useState("");
-  const [isSendingLink, setIsSendingLink] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authInfo, setAuthInfo] = useState<string | null>(null);
-
-  // ——— остальное состояние мессенджера ———
+const App: React.FC<AppProps> = ({ firebaseUser }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const [chats, setChats] = useState<Chat[]>([]);
@@ -96,93 +81,16 @@ const App: React.FC = () => {
   }>({ name: "", position: "", department: "" });
 
   const userDisplayName = useMemo(
-    () => profile?.name || firebaseUser?.email || "",
+    () => profile?.name || firebaseUser.email || "",
     [profile, firebaseUser]
   );
 
-  // ---------- Подписка на auth состояние ----------
+  // ---------- загрузка профиля ----------
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setFirebaseUser(u);
-      setAuthLoading(false);
-    });
-    return () => unsub();
-  }, []);
-
-  // ---------- Обработка входа по magic-link (когда пришли по ссылке из письма) ----------
-
-  useEffect(() => {
-    if (!isSignInWithEmailLink(auth, window.location.href)) return;
-
-    const storedEmail = window.localStorage.getItem(EMAIL_STORAGE_KEY);
-    let emailForLink = storedEmail || window.prompt("Введите email для входа") || "";
-
-    if (!emailForLink) return;
-
-    signInWithEmailLink(auth, emailForLink, window.location.href)
-      .then(() => {
-        window.localStorage.removeItem(EMAIL_STORAGE_KEY);
-        setEmail("");
-        setAuthError(null);
-        setAuthInfo(null);
-        // убираем хвост с query-параметрами
-        window.history.replaceState({}, document.title, window.location.pathname);
-      })
-      .catch((err) => {
-        console.error("Email link sign-in error", err);
-        setAuthError("Не удалось войти по ссылке. Попробуйте ещё раз.");
-      });
-  }, []);
-
-  // ---------- Отправка письма со ссылкой ----------
-
-  const handleSendLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthInfo(null);
-
-    const trimmed = email.trim();
-    if (!trimmed) {
-      setAuthError("Введите email");
-      return;
-    }
-
-    try {
-      setIsSendingLink(true);
-
-      const actionCodeSettings = {
-        url: "https://mebiormessenger.netlify.app",
-        handleCodeInApp: true,
-      };
-
-      await sendSignInLinkToEmail(auth, trimmed, actionCodeSettings);
-      window.localStorage.setItem(EMAIL_STORAGE_KEY, trimmed);
-      setAuthInfo("Мы отправили письмо со ссылкой для входа. Проверьте почту.");
-    } catch (err) {
-      console.error("sendSignInLinkToEmail error", err);
-      setAuthError("Не удалось отправить письмо. Проверьте email.");
-    } finally {
-      setIsSendingLink(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await signOut(auth);
-    setFirebaseUser(null);
-    setProfile(null);
-    setChats([]);
-    setMessages([]);
-    setActiveChatId(null);
-  };
-
-  // ---------- Загрузка / создание профиля пользователя ----------
-
-  useEffect(() => {
-    if (!firebaseUser) return;
+    const userDocRef = doc(db, "users", firebaseUser.uid);
 
     const loadProfile = async () => {
-      const userDocRef = doc(db, "users", firebaseUser.uid);
       const snap = await getDoc(userDocRef);
 
       if (snap.exists()) {
@@ -209,6 +117,7 @@ const App: React.FC = () => {
           position: "",
           department: "",
         };
+
         await setDoc(userDocRef, {
           email: baseProfile.email,
           name: baseProfile.name,
@@ -217,6 +126,7 @@ const App: React.FC = () => {
           avatarUrl: null,
           createdAt: serverTimestamp(),
         });
+
         setProfile(baseProfile);
         setProfileDraft({
           name: baseProfile.name,
@@ -226,14 +136,20 @@ const App: React.FC = () => {
       }
     };
 
-    loadProfile().catch((e) => console.error("Profile load error", e));
+    loadProfile().catch((e) =>
+      console.error("Failed to load user profile", e)
+    );
   }, [firebaseUser]);
 
-  // ---------- Подписка на чаты ----------
+  // ---------- выход ----------
+
+  const handleSignOut = async () => {
+    await signOut(auth);
+  };
+
+  // ---------- подписка на список чатов ----------
 
   useEffect(() => {
-    if (!firebaseUser) return;
-
     const chatsCol = collection(db, "chats");
     const q = query(chatsCol, orderBy("lastMessageAt", "desc"));
 
@@ -250,6 +166,8 @@ const App: React.FC = () => {
         });
       });
       setChats(list);
+
+      // если чат не выбран — берём первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
@@ -257,17 +175,19 @@ const App: React.FC = () => {
 
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firebaseUser]);
+  }, [activeChatId]);
 
-  // ---------- Подписка на сообщения выбранного чата ----------
+  // ---------- подписка на сообщения выбранного чата ----------
 
   useEffect(() => {
-    if (!firebaseUser || !activeChatId) {
+    if (!activeChatId) {
       setMessages([]);
       return;
     }
 
     const messagesCol = collection(db, "messages");
+
+    // ВАЖНО: фильтруем по chatId, чтобы у каждого чата был свой список сообщений
     const q = query(
       messagesCol,
       where("chatId", "==", activeChatId),
@@ -294,16 +214,17 @@ const App: React.FC = () => {
     });
 
     return () => unsub();
-  }, [firebaseUser, activeChatId]);
+  }, [activeChatId]);
 
-  // ---------- Создание чата ----------
+  // ---------- создание чата ----------
 
   const handleCreateChat = async () => {
     const title = window.prompt("Название чата");
-    if (!title || !firebaseUser) return;
+    if (!title) return;
 
     try {
       setIsCreatingChat(true);
+
       const chatsCol = collection(db, "chats");
       const chatDoc = await addDoc(chatsCol, {
         title,
@@ -312,6 +233,7 @@ const App: React.FC = () => {
         createdBy: firebaseUser.uid,
         messageCount: 0,
       });
+
       setActiveChatId(chatDoc.id);
     } catch (e) {
       console.error("Create chat error", e);
@@ -321,30 +243,19 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteChat = async (chatId: string) => {
-    if (!window.confirm("Удалить чат вместе со всеми сообщениями?")) return;
-    try {
-      await deleteDoc(doc(db, "chats", chatId));
-      if (chatId === activeChatId) {
-        setActiveChatId(null);
-        setMessages([]);
-      }
-    } catch (err) {
-      console.error("Delete chat error", err);
-      alert("Не удалось удалить чат");
-    }
-  };
-
-  // ---------- Отправка сообщения ----------
+  // ---------- отправка сообщения ----------
 
   const handleSendMessage = async () => {
-    if (!firebaseUser || !activeChatId) return;
+    if (!activeChatId) return;
     const trimmed = newMessage.trim();
     if (!trimmed) return;
 
     try {
       setIsSending(true);
+
       const messagesCol = collection(db, "messages");
+
+      // каждое сообщение — новый документ
       await addDoc(messagesCol, {
         chatId: activeChatId,
         text: trimmed,
@@ -354,10 +265,11 @@ const App: React.FC = () => {
         userAvatarUrl: profile?.avatarUrl || null,
       });
 
+      // обновляем данные чата
       const chatDocRef = doc(db, "chats", activeChatId);
       const chatSnap = await getDoc(chatDocRef);
       const currentCount =
-        (chatSnap.exists() && ((chatSnap.data().messageCount as number) || 0)) || 0;
+        (chatSnap.exists() && (chatSnap.data().messageCount as number)) || 0;
 
       await updateDoc(chatDocRef, {
         lastMessageAt: serverTimestamp(),
@@ -373,20 +285,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteMessage = async (messageId: string) => {
-    if (!window.confirm("Удалить сообщение?")) return;
-    try {
-      await deleteDoc(doc(db, "messages", messageId));
-    } catch (err) {
-      console.error("Delete message error", err);
-      alert("Не удалось удалить сообщение");
-    }
-  };
+  // ---------- отправка файла ----------
 
-  // ---------- Отправка файла ----------
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!firebaseUser || !activeChatId) return;
+  const handleFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (!activeChatId) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -413,7 +317,7 @@ const App: React.FC = () => {
       const chatDocRef = doc(db, "chats", activeChatId);
       const snap = await getDoc(chatDocRef);
       const currentCount =
-        (snap.exists() && ((snap.data().messageCount as number) || 0)) || 0;
+        (snap.exists() && (snap.data().messageCount as number)) || 0;
 
       await updateDoc(chatDocRef, {
         lastMessageAt: serverTimestamp(),
@@ -429,10 +333,10 @@ const App: React.FC = () => {
     }
   };
 
-  // ---------- Сохранение профиля ----------
+  // ---------- сохранение профиля ----------
 
   const handleSaveProfile = async () => {
-    if (!firebaseUser || !profile) return;
+    if (!profile) return;
 
     try {
       const userDocRef = doc(db, "users", profile.id);
@@ -455,10 +359,12 @@ const App: React.FC = () => {
     }
   };
 
-  // ---------- Загрузка аватара ----------
+  // ---------- загрузка аватара ----------
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!firebaseUser || !profile) return;
+  const handleAvatarChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    if (!profile) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -480,59 +386,14 @@ const App: React.FC = () => {
     }
   };
 
-  // ---------- Рендер ----------
-
-  if (authLoading) {
-    return (
-      <div className="app-root">
-        <div className="loading-text">Загрузка…</div>
-      </div>
-    );
-  }
-
-  // --- экран входа по email, если пользователя нет ---
-  if (!firebaseUser) {
-    return (
-      <div className="app-root">
-        <div className="auth-card">
-          <h1 className="auth-title">ORG MESSENGER</h1>
-          <p className="auth-subtitle">Вход по email</p>
-
-          <form className="auth-form" onSubmit={handleSendLink}>
-            <label className="auth-label">
-              Email
-              <input
-                className="auth-input"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
-              />
-            </label>
-
-            {authError && <div className="auth-error">{authError}</div>}
-            {authInfo && <div className="auth-info">{authInfo}</div>}
-
-            <button
-              type="submit"
-              className="primary-button"
-              disabled={isSendingLink}
-            >
-              {isSendingLink ? "Отправляем…" : "Отправить ссылку для входа"}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  // --- основное приложение, когда пользователь уже вошёл ---
   const activeChat = chats.find((c) => c.id === activeChatId) || null;
+
+  // ---------- рендер ----------
 
   return (
     <div className="app-root">
       <div className="chat-card">
-        {/* Шапка */}
+        {/* шапка */}
         <header className="chat-header">
           <div className="chat-header-left">
             <h1 className="chat-logo">ORG MESSENGER</h1>
@@ -546,9 +407,9 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Основной layout */}
+        {/* layout */}
         <div className="chat-layout">
-          {/* Список чатов */}
+          {/* сайдбар чатов */}
           <aside className="chat-sidebar">
             <div className="sidebar-header">
               <div className="sidebar-title">Чаты</div>
@@ -571,18 +432,7 @@ const App: React.FC = () => {
                   }
                   onClick={() => setActiveChatId(chat.id)}
                 >
-                  <div className="chat-item-row">
-                    <div className="chat-item-title">{chat.title}</div>
-                    <button
-                      className="chat-delete-button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteChat(chat.id);
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
+                  <div className="chat-item-title">{chat.title}</div>
                   <div className="chat-item-sub">
                     Сообщений: {chat.messageCount || 0}
                   </div>
@@ -597,7 +447,7 @@ const App: React.FC = () => {
             </div>
           </aside>
 
-          {/* Основной чат */}
+          {/* основной чат */}
           <main className="chat-main">
             <div className="chat-main-header">
               <div className="chat-main-title">
@@ -632,12 +482,6 @@ const App: React.FC = () => {
                     <div className="message-bubble-wrapper">
                       <div className="message-meta">
                         <span className="message-author">{m.userName}</span>
-                        <button
-                          className="message-delete-button"
-                          onClick={() => handleDeleteMessage(m.id)}
-                        >
-                          ×
-                        </button>
                       </div>
                       <div className="message-bubble">
                         {m.text && <div>{m.text}</div>}
@@ -662,7 +506,7 @@ const App: React.FC = () => {
               )}
             </div>
 
-            {/* Нижняя панель ввода */}
+            {/* нижняя панель ввода */}
             <div className="chat-input-row">
               <label className="file-button">
                 📎 Файл
@@ -692,10 +536,13 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Модалка профиля */}
+      {/* модалка профиля */}
       {isProfileOpen && profile && (
         <div className="modal-backdrop" onClick={() => setIsProfileOpen(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="modal-title">Профиль</h2>
 
             <div className="profile-row">
@@ -733,7 +580,10 @@ const App: React.FC = () => {
                   <input
                     value={profileDraft.name}
                     onChange={(e) =>
-                      setProfileDraft((d) => ({ ...d, name: e.target.value }))
+                      setProfileDraft((d) => ({
+                        ...d,
+                        name: e.target.value,
+                      }))
                     }
                   />
                 </div>
