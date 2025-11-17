@@ -25,9 +25,9 @@ body {
 .app-root {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: stretch; /* важно для телефонов: не центрируем по вертикали */
   justify-content: center;
-  padding: 16px;
+  padding: 8px;
 }
 
 /* Карточка приложения */
@@ -45,7 +45,8 @@ body {
   flex-direction: column;
   width: 100%;
   max-width: 1200px;
-  height: 90vh;
+  height: 100vh;      /* на мобильном растягиваемся по высоте */
+  max-height: 900px;  /* но не бесконечность на десктопе */
   padding: 20px 24px;
 }
 
@@ -272,6 +273,13 @@ body {
   margin-top: 4px;
 }
 
+.chat-new-dot {
+  margin-left: 6px;
+  color: #ffcc66;
+  font-size: 18px;
+  vertical-align: middle;
+}
+
 .chat-empty {
   margin-top: 16px;
   font-size: 13px;
@@ -314,6 +322,7 @@ body {
   overflow-y: auto;
   margin-top: 8px;
   padding-right: 6px;
+  padding-bottom: 8px; /* чуть воздуха над инпутом */
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -578,9 +587,20 @@ body {
 
 /* ---------- Адаптив ---------- */
 
+@media (min-width: 900px) {
+  .app-root {
+    padding: 16px;
+    align-items: center; /* на десктопе снова центрируем */
+  }
+
+  .chat-card {
+    height: 90vh;
+  }
+}
+
 @media (max-width: 900px) {
   .chat-card {
-    height: auto;
+    border-radius: 18px;
   }
 
   .chat-layout {
@@ -589,7 +609,6 @@ body {
 
   .chat-sidebar {
     width: 100%;
-    flex-direction: column;
   }
 
   .chat-main {
