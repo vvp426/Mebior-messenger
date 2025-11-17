@@ -15,7 +15,6 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -79,7 +78,7 @@ const App: React.FC = () => {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  // --- форма логина/регистрации ---
+  // форма логина/регистрации
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -110,7 +109,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // грузим / создаём профиль
       const userDocRef = doc(db, "users", user.uid);
       const snap = await getDoc(userDocRef);
 
@@ -131,10 +129,8 @@ const App: React.FC = () => {
           department: loadedProfile.department,
         });
       } else {
-        // базовый профиль при первой регистрации
         const baseName =
-          user.email?.split("@")[0] ||
-          "Пользователь"; /* можно поправить вручную в профиле */
+          user.email?.split("@")[0] || "Пользователь";
 
         const baseProfile: UserProfile = {
           id: user.uid,
@@ -200,14 +196,14 @@ const App: React.FC = () => {
         authEmail.trim(),
         authPassword
       );
-      // onAuthStateChanged сам создаст профиль
+      // профиль создастся в onAuthStateChanged
     } catch (e: any) {
       console.error("Register error", e);
       if (e?.code === "auth/email-already-in-use") {
         alert("Такой email уже зарегистрирован. Попробуйте войти.");
         setAuthMode("login");
       } else if (e?.code === "auth/weak-password") {
-        alert("Пароль слишком простой (Firebase хочет 6+ символов)");
+        alert("Пароль слишком простой (минимум 6 символов)");
       } else {
         alert("Ошибка регистрации");
       }
@@ -227,9 +223,10 @@ const App: React.FC = () => {
     if (!firebaseUser) return;
 
     const chatsCol = collection(db, "chats");
-    const q = query(chatsCol, orderBy("lastMessageAt", "desc"));
+    // тут orderBy по lastMessageAt норм — это одиночное поле
+    const qChats = query(chatsCol);
 
-    const unsub = onSnapshot(q, (snap) => {
+    const unsub = onSnapshot(qChats, (snap) => {
       const list: Chat[] = [];
       snap.forEach((d) => {
         const data = d.data() as any;
@@ -241,9 +238,18 @@ const App: React.FC = () => {
           messageCount: data.messageCount,
         });
       });
+
+      // отсортируем по lastMessageAt на клиенте
+      list.sort((a, b) => {
+        const ta =
+          (a.lastMessageAt && a.lastMessageAt.toMillis?.()) || 0;
+        const tb =
+          (b.lastMessageAt && b.lastMessageAt.toMillis?.()) || 0;
+        return tb - ta;
+      });
+
       setChats(list);
 
-      // если нет активного чата, выбираем первый
       if (!activeChatId && list.length > 0) {
         setActiveChatId(list[0].id);
       }
@@ -262,30 +268,46 @@ const App: React.FC = () => {
     }
 
     const messagesCol = collection(db, "messages");
-    const q = query(
+    // ВАЖНО: без orderBy, только where — индекс не нужен
+    const qMessages = query(
       messagesCol,
-      where("chatId", "==", activeChatId),
-      orderBy("createdAt", "asc")
+      where("chatId", "==", activeChatId)
     );
 
-    const unsub = onSnapshot(q, (snap) => {
-      const list: Message[] = [];
-      snap.forEach((d) => {
-        const data = d.data() as any;
-        list.push({
-          id: d.id,
-          chatId: data.chatId,
-          text: data.text,
-          createdAt: data.createdAt,
-          userId: data.userId,
-          userName: data.userName,
-          userAvatarUrl: data.userAvatarUrl,
-          fileName: data.fileName,
-          fileUrl: data.fileUrl,
+    const unsub = onSnapshot(
+      qMessages,
+      (snap) => {
+        const list: Message[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          list.push({
+            id: d.id,
+            chatId: data.chatId,
+            text: data.text,
+            createdAt: data.createdAt,
+            userId: data.userId,
+            userName: data.userName,
+            userAvatarUrl: data.userAvatarUrl,
+            fileName: data.fileName,
+            fileUrl: data.fileUrl,
+          });
         });
-      });
-      setMessages(list);
-    });
+
+        // сортировка по createdAt уже в JS
+        list.sort((a, b) => {
+          const ta =
+            (a.createdAt && a.createdAt.toMillis?.()) || 0;
+          const tb =
+            (b.createdAt && b.createdAt.toMillis?.()) || 0;
+          return ta - tb;
+        });
+
+        setMessages(list);
+      },
+      (err) => {
+        console.error("Messages listen error", err);
+      }
+    );
 
     return () => unsub();
   }, [firebaseUser, activeChatId]);
@@ -514,7 +536,7 @@ const App: React.FC = () => {
     );
   }
 
-  // --- экран логина / регистрации ---
+  // экран логина / регистрации
   if (!firebaseUser) {
     return (
       <div className="app-root">
